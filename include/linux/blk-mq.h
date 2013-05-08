@@ -23,6 +23,7 @@ struct blk_mq_hw_ctx {
 	unsigned long		flags;		/* BLK_MQ_F_* flags */
 
 	struct request_queue	*queue;
+	unsigned int		queue_num;
 
 	void			*driver_data;
 
@@ -122,6 +123,7 @@ void blk_mq_insert_request(struct request_queue *, struct request *, bool);
 void blk_mq_insert_requests(struct request_queue *, struct list_head *, bool, bool);
 void blk_mq_run_queues(struct request_queue *q, bool async);
 void blk_mq_free_request(struct request *rq);
+bool blk_mq_can_queue(struct blk_mq_hw_ctx *);
 struct request *blk_mq_alloc_request(struct request_queue *q, int rw, gfp_t gfp);
 struct request *blk_mq_alloc_reserved_request(struct request_queue *q, int rw, gfp_t gfp);
 struct request *blk_mq_rq_from_tag(struct request_queue *q, unsigned int tag);

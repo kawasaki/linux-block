@@ -3522,9 +3522,36 @@ static int mtip_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 	return 0;
 }
 
+struct blk_mq_hw_ctx *mtip_map_queue(struct request_queue *q, const int cpu)
+{
+#if 0
+	struct blk_mq_hw_ctx *hctx;
+	unsigned int i, start;
+
+	/*
+	 * Return CPU mapped queue, if it has room
+	 */
+	hctx = q->queue_hw_ctx[q->mq_map[cpu]];
+	if (blk_mq_can_queue(hctx))
+		return hctx;
+
+	i = start = hctx->queue_num;
+	do {
+		if (++i >= q->nr_hw_queues)
+			i = 0;
+
+		hctx = q->queue_hw_ctx[i];
+		if (blk_mq_can_queue(hctx))
+			return hctx;
+	} while (i != start);
+
+#endif
+	return q->queue_hw_ctx[q->mq_map[cpu]];
+}
+
 static struct blk_mq_ops mtip_mq_ops = {
 	.queue_rq	= mtip_queue_rq,
-	.map_queue	= blk_mq_map_queue,
+	.map_queue	= mtip_map_queue,
 	.alloc_hctx	= blk_mq_alloc_single_hw_queue,
 	.free_hctx	= blk_mq_free_single_hw_queue,
 	.init_hctx	= mtip_init_hctx,

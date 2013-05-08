@@ -86,6 +86,12 @@ static struct request *blk_mq_alloc_rq(struct blk_mq_hw_ctx *hctx, gfp_t gfp,
 	return NULL;
 }
 
+bool blk_mq_can_queue(struct blk_mq_hw_ctx *hctx)
+{
+	return blk_mq_has_free_tags(hctx->tags);
+}
+EXPORT_SYMBOL(blk_mq_can_queue);
+
 static void blk_mq_rq_ctx_init(struct blk_mq_ctx *ctx, struct request *rq,
 			       unsigned int rw_flags)
 {
@@ -978,6 +984,7 @@ static int blk_mq_init_hw_queues(struct request_queue *q,
 		spin_lock_init(&hctx->lock);
 		INIT_LIST_HEAD(&hctx->dispatch);
 		hctx->queue = q;
+		hctx->queue_num = i;
 		hctx->flags = reg->flags;
 		hctx->queue_depth = reg->queue_depth;
 		hctx->rq_pdu = reg->rq_pdu;
@@ -1054,7 +1061,7 @@ static void blk_mq_init_cpu_queues(struct request_queue *q,
 		 * Set local node, IFF we have more than one hw queue. If
 		 * not, we remain on the home node of the device
 		 */
-		if (nr_hw_queues && hctx->numa_node == NUMA_NO_NODE)
+		if (nr_hw_queues > 1 && hctx->numa_node == NUMA_NO_NODE)
 			hctx->numa_node = cpu_to_node(i);
 	}
 }
@@ -1096,6 +1103,7 @@ struct request_queue *blk_mq_init_queue(struct blk_mq_reg *reg,
 			goto err_hctxs;
 
 		hctxs[i]->numa_node = NUMA_NO_NODE;
+		hctxs[i]->queue_num = i;
 	}
 
 	q = blk_alloc_queue_node(GFP_KERNEL, reg->numa_node);

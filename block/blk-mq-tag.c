@@ -14,7 +14,6 @@
  * Per-cpu cache entries
  */
 struct blk_mq_tag_map {
-	unsigned int ____cacheline_aligned_in_smp has_free;
 	unsigned int nr_free;
 	unsigned int freelist[];
 };
@@ -38,9 +37,6 @@ struct blk_mq_tags {
 	} ____cacheline_aligned_in_smp;
 
 	struct blk_mq_tag_map __percpu *free_maps;
-
-	unsigned long ipi_flags;
-	cpumask_var_t ipi_mask;
 
 	struct blk_mq_cpu_notifier cpu_notifier;
 };
@@ -66,43 +62,6 @@ static unsigned int move_tags(unsigned int *dst, unsigned int *dst_nr,
 	*dst_nr += nr_to_move;
 
 	return nr_to_move;
-}
-
-/*
- * Wait on a free tag, move batch to map when we have it. Returns with
- * local CPU irq flags saved in 'flags'.
- */
-static void wait_on_tags(struct blk_mq_tags *tags, struct blk_mq_tag_map **map,
-			 unsigned long *flags)
-{
-	DEFINE_TAG_WAIT(wait);
-
-	do {
-		spin_lock_irqsave(&tags->lock, *flags);
-
-		*map = this_cpu_ptr(tags->free_maps);
-		if ((*map)->nr_free || tags->nr_free) {
-			if (!(*map)->nr_free) {
-				move_tags((*map)->freelist, &(*map)->nr_free,
-						tags->freelist, &tags->nr_free,
-						tags->batch_move);
-			}
-
-			if (!list_empty(&wait.list))
-				list_del(&wait.list);
-
-			spin_unlock(&tags->lock);
-			break;
-		}
-
-		__set_current_state(TASK_UNINTERRUPTIBLE);
-
-		if (list_empty(&wait.list))
-			list_add_tail(&wait.list, &tags->wait);
-
-		spin_unlock_irqrestore(&tags->lock, *flags);
-		io_schedule();
-	} while (1);
 }
 
 static void __wake_waiters(struct blk_mq_tags *tags, unsigned int nr)
@@ -133,36 +92,84 @@ static void prune_cache(void *data)
 	if (!list_empty(&tags->wait))
 		__wake_waiters(tags, waiters);
 	spin_unlock(&tags->lock);
-
-	clear_bit_unlock(0, &tags->ipi_flags);
 }
 #endif
 
 static void ipi_local_caches(struct blk_mq_tags *tags, unsigned int this_cpu)
 {
 #if NR_CPUS != 1
-	unsigned int i;
+	cpumask_var_t ipi_mask;
+	unsigned int i, total;
 
 	/*
-	 * If bit is already set, ipi reclaim is already running. If
-	 * we set the bit, we now own the ipi_mask cpumask.
+	 * We could per-cpu cache this things, but overhead is probably not
+	 * large enough to care about it. If we fail, just punt to doing a
+	 * prune on all CPUs.
 	 */
-	if (test_and_set_bit_lock(0, &tags->ipi_flags))
+	if (!alloc_cpumask_var(&ipi_mask, GFP_ATOMIC)) {
+		smp_call_function(prune_cache, tags, 0);
 		return;
+	}
 
-	cpumask_clear(tags->ipi_mask);
+	cpumask_clear(ipi_mask);
 
+	total = 0;
 	for_each_online_cpu(i) {
 		struct blk_mq_tag_map *map = per_cpu_ptr(tags->free_maps, i);
 
-		if (!map->has_free)
+		if (!map->nr_free)
 			continue;
 
-		cpumask_set_cpu(i, tags->ipi_mask);
+		total += map->nr_free;
+		cpumask_set_cpu(i, ipi_mask);
+
+		if (total > tags->batch_move)
+			break;
 	}
 
-	smp_call_function_any(tags->ipi_mask, prune_cache, tags, 0);
+	smp_call_function_many(ipi_mask, prune_cache, tags, 0);
+	free_cpumask_var(ipi_mask);
 #endif
+}
+
+/*
+ * Wait on a free tag, move batch to map when we have it. Returns with
+ * local CPU irq flags saved in 'flags'.
+ */
+static void wait_on_tags(struct blk_mq_tags *tags, struct blk_mq_tag_map **map,
+			 unsigned long *flags)
+{
+	DEFINE_TAG_WAIT(wait);
+
+	do {
+		spin_lock_irqsave(&tags->lock, *flags);
+
+		__set_current_state(TASK_UNINTERRUPTIBLE);
+
+		if (list_empty(&wait.list))
+			list_add_tail(&wait.list, &tags->wait);
+
+		*map = this_cpu_ptr(tags->free_maps);
+		if ((*map)->nr_free || tags->nr_free) {
+			if (!(*map)->nr_free) {
+				move_tags((*map)->freelist, &(*map)->nr_free,
+						tags->freelist, &tags->nr_free,
+						tags->batch_move);
+			}
+
+			if (!list_empty(&wait.list))
+				list_del(&wait.list);
+
+			spin_unlock(&tags->lock);
+			break;
+		}
+
+		spin_unlock_irqrestore(&tags->lock, *flags);
+		ipi_local_caches(tags, raw_smp_processor_id());
+		io_schedule();
+	} while (1);
+
+	__set_current_state(TASK_RUNNING);
 }
 
 void blk_mq_wait_for_tags(struct blk_mq_tags *tags)
@@ -173,6 +180,11 @@ void blk_mq_wait_for_tags(struct blk_mq_tags *tags)
 	ipi_local_caches(tags, raw_smp_processor_id());
 	wait_on_tags(tags, &map, &flags);
 	local_irq_restore(flags);
+}
+
+bool blk_mq_has_free_tags(struct blk_mq_tags *tags)
+{
+	return !tags || tags->nr_free != 0;
 }
 
 static unsigned int __blk_mq_get_tag(struct blk_mq_tags *tags, gfp_t gfp)
@@ -193,8 +205,6 @@ static unsigned int __blk_mq_get_tag(struct blk_mq_tags *tags, gfp_t gfp)
 		if (map->nr_free) {
 			map->nr_free--;
 			tag = map->freelist[map->nr_free];
-			if (!map->nr_free)
-				map->has_free = 0;
 			local_irq_restore(flags);
 			return tag;
 		}
@@ -285,8 +295,6 @@ static void __blk_mq_put_tag(struct blk_mq_tags *tags, unsigned int tag)
 
 	map->freelist[map->nr_free] = tag;
 	map->nr_free++;
-	if (!map->has_free)
-		map->has_free = 1;
 
 	if (map->nr_free >= tags->max_cache ||
 	    !list_empty_careful(&tags->wait)) {
@@ -384,7 +392,6 @@ static void blk_mq_tag_notify(void *data, unsigned long action,
 		if (map->nr_free) {
 			unsigned long flags;
 
-			map->has_free = 0;
 			spin_lock_irqsave(&tags->lock, flags);
 			move_tags(tags->freelist, &tags->nr_free,
 				  map->freelist, &map->nr_free, map->nr_free);
@@ -423,9 +430,6 @@ struct blk_mq_tags *blk_mq_init_tags(unsigned int nr_tags,
 		if (!tags->reservelist)
 			goto err_reservelist;
 	}
-
-	if (!alloc_cpumask_var(&tags->ipi_mask, GFP_KERNEL))
-		goto err_cpumask;
 
 	spin_lock_init(&tags->lock);
 	INIT_LIST_HEAD(&tags->wait);
@@ -466,12 +470,10 @@ struct blk_mq_tags *blk_mq_init_tags(unsigned int nr_tags,
 	blk_mq_register_cpu_notifier(&tags->cpu_notifier);
 	return tags;
 
-err_cpumask:
-	kfree(tags->reservelist);
 err_reservelist:
 	kfree(tags->freelist);
 err_freelist:
-	free_percpu(tags->free_maps);
+	kfree(tags->free_maps);
 err_free_maps:
 	kfree(tags);
 	return NULL;
@@ -481,8 +483,42 @@ void blk_mq_free_tags(struct blk_mq_tags *tags)
 {
 	blk_mq_unregister_cpu_notifier(&tags->cpu_notifier);
 	free_percpu(tags->free_maps);
-	free_cpumask_var(tags->ipi_mask);
 	kfree(tags->freelist);
 	kfree(tags->reservelist);
 	kfree(tags);
+}
+
+ssize_t blk_mq_tag_sysfs_show(struct blk_mq_tags *tags, char *page)
+{
+	char *orig_page = page;
+	unsigned long flags;
+	struct list_head *tmp;
+	int waiters;
+	int cpu;
+
+	if (!tags)
+		return 0;
+
+	spin_lock_irqsave(&tags->lock, flags);
+
+	page += sprintf(page, "nr_tags=%u, reserved_tags=%u, batch_move=%u,"
+			" max_cache=%u\n", tags->nr_tags, tags->reserved_tags,
+			tags->batch_move, tags->max_cache);
+
+	waiters = 0;
+	list_for_each(tmp, &tags->wait)
+		waiters++;
+
+	page += sprintf(page, "nr_free=%u, nr_reserved=%u, waiters=%u\n",
+			tags->nr_free, tags->nr_reserved, waiters);
+
+	for_each_online_cpu(cpu) {
+		struct blk_mq_tag_map *map = per_cpu_ptr(tags->free_maps, cpu);
+
+		page += sprintf(page, "  cpu%02u: nr_free=%u\n", cpu,
+					map->nr_free);
+	}
+
+	spin_unlock_irqrestore(&tags->lock, flags);
+	return page - orig_page;
 }

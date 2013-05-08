@@ -11,6 +11,7 @@
 
 #include <linux/blk-mq.h>
 #include "blk-mq.h"
+#include "blk-mq-tag.h"
 
 static void blk_mq_sysfs_release(struct kobject *kobj)
 {
@@ -238,6 +239,11 @@ static ssize_t blk_mq_hw_sysfs_ipi_store(struct blk_mq_hw_ctx *hctx,
 	return len;
 }
 
+static ssize_t blk_mq_hw_sysfs_tags_show(struct blk_mq_hw_ctx *hctx, char *page)
+{
+	return blk_mq_tag_sysfs_show(hctx->tags, page);
+}
+
 static struct blk_mq_ctx_sysfs_entry blk_mq_sysfs_dispatched = {
 	.attr = {.name = "dispatched", .mode = S_IRUGO },
 	.show = blk_mq_sysfs_dispatched_show,
@@ -284,6 +290,10 @@ static struct blk_mq_hw_ctx_sysfs_entry blk_mq_hw_sysfs_ipi = {
 	.show = blk_mq_hw_sysfs_ipi_show,
 	.store = blk_mq_hw_sysfs_ipi_store,
 };
+static struct blk_mq_hw_ctx_sysfs_entry blk_mq_hw_sysfs_tags = {
+	.attr = {.name = "tags", .mode = S_IRUGO },
+	.show = blk_mq_hw_sysfs_tags_show,
+};
 
 static struct attribute *default_hw_ctx_attrs[] = {
 	&blk_mq_hw_sysfs_queued.attr,
@@ -291,6 +301,7 @@ static struct attribute *default_hw_ctx_attrs[] = {
 	&blk_mq_hw_sysfs_dispatched.attr,
 	&blk_mq_hw_sysfs_pending.attr,
 	&blk_mq_hw_sysfs_ipi.attr,
+	&blk_mq_hw_sysfs_tags.attr,
 	NULL,
 };
 
