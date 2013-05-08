@@ -473,7 +473,7 @@ struct blk_mq_tags *blk_mq_init_tags(unsigned int nr_tags,
 err_reservelist:
 	kfree(tags->freelist);
 err_freelist:
-	kfree(tags->free_maps);
+	free_percpu(tags->free_maps);
 err_free_maps:
 	kfree(tags);
 	return NULL;
