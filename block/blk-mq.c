@@ -640,7 +640,7 @@ static void __blk_mq_insert_requests(struct request_queue *q,
 	while (!list_empty(list)) {
 		struct request *rq;
 
-		rq = list_entry(list->next, struct request, queuelist);
+		rq = list_first_entry(list, struct request, queuelist);
 		list_del_init(&rq->queuelist);
 		__blk_mq_insert_request(hctx, rq);
 	}
@@ -910,7 +910,7 @@ static void blk_mq_free_rq_map(struct blk_mq_hw_ctx *hctx)
 	struct page *page;
 
 	while (!list_empty(&hctx->page_list)) {
-		page = list_entry(hctx->page_list.next, struct page, list);
+		page = list_first_entry(&hctx->page_list, struct page, list);
 		list_del_init(&page->list);
 		__free_pages(page, page->private);
 	}
