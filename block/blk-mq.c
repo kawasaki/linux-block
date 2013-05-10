@@ -453,7 +453,8 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 	}
 
 	/*
-	 * If we found entries above, batch add them to the dispatch list.
+	 * If we have previous entries on our dispatch list, grab them
+	 * and stuff them at the front for more fair dispatch.
 	 */
 	if (!list_empty_careful(&hctx->dispatch)) {
 		spin_lock(&hctx->lock);
@@ -521,7 +522,8 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 		hctx->dispatched[ilog2(queued) + 1]++;
 
 	/*
-	 * Any items that need requeuing? Find last entry, batch re-add.
+	 * Any items that need requeuing? Stuff them into hctx->dispatch,
+	 * that is where we will continue on next queue run.
 	 */
 	if (!list_empty(&rq_list)) {
 		spin_lock(&hctx->lock);
