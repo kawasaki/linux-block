@@ -3811,6 +3811,9 @@ static int mtip_block_remove(struct driver_data *dd)
 	}
 	mtip_hw_debugfs_exit(dd);
 
+	/* De-initialize the protocol layer. */
+	mtip_hw_exit(dd);
+
 	/*
 	 * Delete our gendisk structure. This also removes the device
 	 * from /dev
@@ -3825,9 +3828,6 @@ static int mtip_block_remove(struct driver_data *dd)
 	spin_lock(&rssd_index_lock);
 	ida_remove(&rssd_index_ida, dd->index);
 	spin_unlock(&rssd_index_lock);
-
-	/* De-initialize the protocol layer. */
-	mtip_hw_exit(dd);
 
 	blk_cleanup_queue(dd->queue);
 	dd->disk  = NULL;
