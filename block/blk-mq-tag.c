@@ -127,7 +127,12 @@ static void ipi_local_caches(struct blk_mq_tags *tags, unsigned int this_cpu)
 			break;
 	}
 
-	smp_call_function_many(ipi_mask, prune_cache, tags, 0);
+	if (total) {
+		preempt_disable();
+		smp_call_function_many(ipi_mask, prune_cache, tags, 0);
+		preempt_enable();
+	}
+
 	free_cpumask_var(ipi_mask);
 #endif
 }
