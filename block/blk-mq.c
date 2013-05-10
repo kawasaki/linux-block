@@ -189,6 +189,20 @@ void __blk_mq_end_io(struct request *rq, int error)
 	struct bio *bio = rq->bio;
 	unsigned int bytes = 0;
 
+	/*
+	 * Currently this is only for FLUSH. The auxiliary flush request is
+	 * allocated at runtime and must be freed, so it doesn't have
+	 * REQ_FLUSH_SEQ set.
+	 */
+	if (rq->end_io) {
+		bool is_flush = rq->cmd_flags & REQ_FLUSH_SEQ;
+
+		/* end_io might clear REQ_FLUSH_SEQ */
+		rq->end_io(rq, error);
+		if (is_flush)
+			return;
+	}
+
 	if (blk_mark_rq_complete(rq))
 		return;
 
@@ -408,7 +422,7 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 {
 	struct request_queue *q = hctx->queue;
 	struct blk_mq_ctx *ctx;
-	struct request *rq;
+	struct request *rq, *tmp;
 	LIST_HEAD(rq_list);
 	int bit, queued;
 
@@ -428,6 +442,14 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 		spin_lock(&ctx->lock);
 		list_splice_tail_init(&ctx->rq_list, &rq_list);
 		spin_unlock(&ctx->lock);
+	}
+
+	list_for_each_entry_safe(rq, tmp, &rq_list, queuelist) {
+		/* This changes request order unfortunately */
+		if (rq->cmd_flags & (REQ_FLUSH | REQ_FUA)) {
+			list_del_init(&rq->queuelist);
+			blk_insert_flush(rq);
+		}
 	}
 
 	/*
@@ -673,6 +695,27 @@ void blk_mq_insert_requests(struct request_queue *q, struct list_head *list,
 	if (this_ctx)
 		__blk_mq_insert_requests(q, this_ctx, &ctx_list, run_queue,
 						from_schedule);
+}
+
+/*
+ * Unlike blk_mq_insert_request, this directly inserts the request to
+ * hardqueue and run it
+ */
+void blk_mq_run_request(struct request *rq, bool run_queue, bool async)
+{
+	struct request_queue *q = rq->q;
+	struct blk_mq_hw_ctx *hctx;
+	struct blk_mq_ctx *ctx;
+
+	ctx = rq->mq_ctx;
+	hctx = q->mq_ops->map_queue(q, ctx->cpu);
+
+	spin_lock(&hctx->lock);
+	list_add_tail(&rq->queuelist, &hctx->dispatch);
+	spin_unlock(&hctx->lock);
+
+	if (run_queue)
+		blk_mq_run_hw_queue(hctx, async);
 }
 
 static void blk_mq_bio_to_request(struct request_queue *q,
@@ -1129,6 +1172,8 @@ struct request_queue *blk_mq_init_queue(struct blk_mq_reg *reg,
 	blk_queue_rq_timed_out(q, reg->ops->timeout);
 	if (reg->timeout)
 		blk_queue_rq_timeout(q, reg->timeout);
+
+	blk_mq_init_flush(q);
 
 	blk_mq_init_cpu_queues(q, reg->nr_hw_queues);
 

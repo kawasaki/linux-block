@@ -449,7 +449,13 @@ struct request_queue {
 	unsigned long		flush_pending_since;
 	struct list_head	flush_queue[2];
 	struct list_head	flush_data_in_flight;
-	struct request		flush_rq;
+	union {
+		struct request	flush_rq;
+		struct {
+			spinlock_t mq_flush_lock;
+			struct work_struct mq_flush_work;
+		};
+	};
 
 	struct mutex		sysfs_lock;
 
