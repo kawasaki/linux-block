@@ -42,6 +42,8 @@ struct bio {
 						 * top bits priority
 						 */
 
+	struct io_context	*bi_ioc;
+
 	unsigned short		bi_vcnt;	/* how many bio_vec's */
 	unsigned short		bi_idx;		/* current index into bvl_vec */
 
@@ -67,7 +69,6 @@ struct bio {
 	 * Optional ioc and css associated with this bio.  Put on bio
 	 * release.  Read comment on top of bio_associate_current().
 	 */
-	struct io_context	*bi_ioc;
 	struct cgroup_subsys_state *bi_css;
 #endif
 #if defined(CONFIG_BLK_DEV_INTEGRITY)
@@ -178,6 +179,7 @@ enum rq_flag_bits {
 	__REQ_MIXED_MERGE,	/* merge of different types, fail separately */
 	__REQ_KERNEL, 		/* direct IO to kernel pages */
 	__REQ_PM,		/* runtime pm request */
+	__REQ_END,		/* last of chain of requests */
 	__REQ_NR_BITS,		/* stops here */
 };
 
@@ -229,5 +231,6 @@ enum rq_flag_bits {
 #define REQ_SECURE		(1ULL << __REQ_SECURE)
 #define REQ_KERNEL		(1ULL << __REQ_KERNEL)
 #define REQ_PM			(1ULL << __REQ_PM)
+#define REQ_END			(1ULL << __REQ_END)
 
 #endif /* __LINUX_BLK_TYPES_H */
