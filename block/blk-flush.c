@@ -170,7 +170,7 @@ static bool blk_flush_complete_seq(struct request *rq,
 	struct list_head *pending = &fq->flush_queue[fq->flush_pending_idx];
 	bool queued = false, kicked;
 
-	BUG_ON(rq->tag < 0);
+	BUG_ON(q->mq_ops && rq->tag < 0);
 
 	BUG_ON(rq->flush.seq & seq);
 	rq->flush.seq |= seq;

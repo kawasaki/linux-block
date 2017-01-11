@@ -117,10 +117,18 @@ struct request *blk_mq_sched_get_request(struct request_queue *q,
 
 	blk_mq_set_alloc_data(data, q, 0, ctx, hctx);
 
-	if (e && e->type->ops.mq.get_request)
-		rq = e->type->ops.mq.get_request(q, op, data);
-	else
-		rq = __blk_mq_alloc_request(data, op);
+	if (e) {
+		if (e->type->ops.mq.get_request)
+			rq = e->type->ops.mq.get_request(q, op, data);
+		else
+			rq = __blk_mq_alloc_request(data, hctx->sched_tags, op);
+	} else {
+		rq = __blk_mq_alloc_request(data, hctx->tags, op);
+		if (rq) {
+			rq->tag = rq->sched_tag;
+			rq->sched_tag = -1;
+		}
+	}
 
 	if (rq) {
 		rq->elv.icq = NULL;
@@ -264,4 +272,41 @@ int blk_mq_sched_init(struct request_queue *q)
 	mutex_unlock(&q->sysfs_lock);
 
 	return ret;
+}
+
+int blk_mq_sched_setup(struct request_queue *q)
+{
+	struct blk_mq_tag_set *set = q->tag_set;
+	struct blk_mq_hw_ctx *hctx;
+	int i;
+
+	printk("blk_mq_sched_setup\n");
+
+	/*
+	 * scheduler init success. teardown and reinit queues, since we're
+	 * now switching the rq map from ->tags to ->scheduler_tags
+	 */
+	queue_for_each_hw_ctx(q, hctx, i) {
+		blk_mq_free_rqs(set, hctx->tags, i);
+
+		hctx->sched_tags = blk_mq_alloc_rq_map(set, i, 256, 0);
+		blk_mq_alloc_rqs(set, hctx->sched_tags, i, 256);
+	}
+
+	return 0;
+}
+
+void blk_mq_sched_teardown(struct request_queue *q)
+{
+	struct blk_mq_tag_set *set = q->tag_set;
+	struct blk_mq_hw_ctx *hctx;
+	int i;
+
+	queue_for_each_hw_ctx(q, hctx, i) {
+		blk_mq_free_rqs(set, hctx->sched_tags, i);
+		blk_mq_free_rq_map(hctx->sched_tags);
+		hctx->sched_tags = NULL;
+
+		blk_mq_alloc_rqs(set, hctx->tags, i, set->queue_depth);
+	}
 }

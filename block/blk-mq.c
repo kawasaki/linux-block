@@ -218,23 +218,23 @@ void blk_mq_rq_ctx_init(struct request_queue *q, struct blk_mq_ctx *ctx,
 EXPORT_SYMBOL_GPL(blk_mq_rq_ctx_init);
 
 struct request *__blk_mq_alloc_request(struct blk_mq_alloc_data *data,
+				       struct blk_mq_tags *tags,
 				       unsigned int op)
 {
-	struct blk_mq_tags *tags = data->hctx->sched_tags;
 	struct request *rq;
-	unsigned int sched_tag;
+	unsigned int tag;
 
-	sched_tag = blk_mq_get_tag(data, tags);
-	if (sched_tag != BLK_MQ_TAG_FAIL) {
-		rq = tags->rqs[sched_tag];
-		rq->tag = -1;
+	tag = blk_mq_get_tag(data, tags);
+	if (tag != BLK_MQ_TAG_FAIL) {
+		rq = tags->rqs[tag];
 
 		if (blk_mq_tag_busy(data->hctx)) {
 			rq->rq_flags = RQF_MQ_INFLIGHT;
 			atomic_inc(&data->hctx->nr_active);
 		}
 
-		rq->sched_tag = sched_tag;
+		rq->tag = -1;
+		rq->sched_tag = tag;
 		blk_mq_rq_ctx_init(data->q, data->ctx, rq, op);
 		return rq;
 	}
@@ -306,11 +306,14 @@ struct request *blk_mq_alloc_request_hctx(struct request_queue *q, int rw,
 	ctx = __blk_mq_get_ctx(q, cpumask_first(hctx->cpumask));
 
 	blk_mq_set_alloc_data(&alloc_data, q, flags, ctx, hctx);
-	rq = __blk_mq_alloc_request(&alloc_data, rw);
+	rq = __blk_mq_alloc_request(&alloc_data, hctx->tags, rw);
 	if (!rq) {
 		ret = -EWOULDBLOCK;
 		goto out_queue_exit;
 	}
+
+	rq->tag = rq->sched_tag;
+	rq->sched_tag = -1;
 
 	return rq;
 
@@ -323,11 +326,8 @@ EXPORT_SYMBOL_GPL(blk_mq_alloc_request_hctx);
 void __blk_mq_finish_request(struct blk_mq_hw_ctx *hctx, struct blk_mq_ctx *ctx,
 			     struct request *rq)
 {
-	const int tag = rq->tag;
 	const int sched_tag = rq->sched_tag;
 	struct request_queue *q = rq->q;
-
-	blk_mq_sched_completed_request(hctx, rq);
 
 	if (rq->rq_flags & RQF_MQ_INFLIGHT)
 		atomic_dec(&hctx->nr_active);
@@ -337,13 +337,12 @@ void __blk_mq_finish_request(struct blk_mq_hw_ctx *hctx, struct blk_mq_ctx *ctx,
 
 	clear_bit(REQ_ATOM_STARTED, &rq->atomic_flags);
 	clear_bit(REQ_ATOM_POLL_SLEPT, &rq->atomic_flags);
-	if (tag >= 0) {
-		WARN_ON_ONCE(hctx->tags->rqs[tag] != rq);
-		hctx->tags->rqs[tag] = NULL;
-		blk_mq_put_tag(hctx, hctx->tags, ctx, tag);
+	if (rq->tag != -1) {
+		WARN_ON_ONCE(hctx->tags->rqs[rq->tag] != rq);
+		blk_mq_put_tag(hctx, hctx->tags, ctx, rq->tag);
 	}
-	if (sched_tag >= 0)
-		blk_mq_put_tag(hctx, hctx->sched_tags, ctx, sched_tag);
+	if (sched_tag != -1)
+		blk_mq_sched_completed_request(hctx, rq);
 	blk_queue_exit(q);
 }
 
@@ -858,12 +857,9 @@ int blk_mq_assign_drv_tag(struct request *rq)
 	};
 
 	rq->tag = blk_mq_get_tag(&data, hctx->tags);
-	if (rq->tag < 0)
-		goto out;
-	WARN_ON_ONCE(hctx->tags->rqs[rq->tag]);
-	hctx->tags->rqs[rq->tag] = rq;
+	if (rq->tag >= 0)
+		hctx->tags->rqs[rq->tag] = rq;
 
-out:
 	return rq->tag;
 }
 
@@ -1557,7 +1553,7 @@ void blk_mq_free_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 {
 	struct page *page;
 
-	if (tags->rqs && set && set->ops->exit_request) {
+	if (tags->rqs && set->ops->exit_request) {
 		int i;
 
 		for (i = 0; i < tags->nr_tags; i++) {
@@ -1584,6 +1580,7 @@ void blk_mq_free_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 void blk_mq_free_rq_map(struct blk_mq_tags *tags)
 {
 	kfree(tags->rqs);
+	tags->rqs = NULL;
 
 	blk_mq_free_tags(tags);
 }
@@ -1618,7 +1615,7 @@ static size_t order_to_size(unsigned int order)
 }
 
 int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
-		     unsigned int hctx_idx)
+		     unsigned int hctx_idx, unsigned int depth)
 {
 	unsigned int i, j, entries_per_page, max_order = 4;
 	size_t rq_size, left;
@@ -1631,9 +1628,9 @@ int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 	 */
 	rq_size = round_up(sizeof(struct request) + set->cmd_size,
 				cache_line_size());
-	left = rq_size * set->queue_depth;
+	left = rq_size * depth;
 
-	for (i = 0; i < set->queue_depth; ) {
+	for (i = 0; i < depth; ) {
 		int this_order = max_order;
 		struct page *page;
 		int to_do;
@@ -1667,7 +1664,7 @@ int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 		 */
 		kmemleak_alloc(p, order_to_size(this_order), 1, GFP_NOIO);
 		entries_per_page = order_to_size(this_order) / rq_size;
-		to_do = min(entries_per_page, set->queue_depth - i);
+		to_do = min(entries_per_page, depth - i);
 		left -= to_do * rq_size;
 		for (j = 0; j < to_do; j++) {
 			tags->rqs[i] = p;
@@ -1684,6 +1681,7 @@ int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 			i++;
 		}
 	}
+
 	return 0;
 
 fail:
@@ -1799,7 +1797,6 @@ static int blk_mq_init_hctx(struct request_queue *q,
 	cpuhp_state_add_instance_nocalls(CPUHP_BLK_MQ_DEAD, &hctx->cpuhp_dead);
 
 	hctx->tags = set->tags[hctx_idx];
-	hctx->sched_tags = set->sched_tags[hctx_idx];
 
 	/*
 	 * Allocate space for all possible cpus to avoid allocation at
@@ -1881,35 +1878,29 @@ static void blk_mq_init_cpu_queues(struct request_queue *q,
 	}
 }
 
-static void __blk_mq_free_rq_map_i(struct blk_mq_tag_set *set, int hctx_idx)
+static void __blk_mq_free_rq_map_all(struct blk_mq_tag_set *set, int hctx_idx)
 {
-	if (set->sched_tags[hctx_idx]) {
-		blk_mq_free_rqs(set, set->sched_tags[hctx_idx], hctx_idx);
-		blk_mq_free_rq_map(set->sched_tags[hctx_idx]);
-		set->sched_tags[hctx_idx] = NULL;
-	}
 	if (set->tags[hctx_idx]) {
+		blk_mq_free_rqs(set, set->tags[hctx_idx], hctx_idx);
 		blk_mq_free_rq_map(set->tags[hctx_idx]);
 		set->tags[hctx_idx] = NULL;
 	}
 }
 
-static bool __blk_mq_alloc_rq_map_i(struct blk_mq_tag_set *set, int hctx_idx,
-				    unsigned int nr_requests)
+static bool __blk_mq_alloc_rq_map(struct blk_mq_tag_set *set, int hctx_idx)
 {
 	int ret = 0;
 
 	set->tags[hctx_idx] = blk_mq_alloc_rq_map(set, hctx_idx,
 					set->queue_depth, set->reserved_tags);
-	set->sched_tags[hctx_idx] = blk_mq_alloc_rq_map(set, hctx_idx,
-							nr_requests, 0);
-	if (set->sched_tags[hctx_idx])
-		ret = blk_mq_alloc_rqs(set, set->sched_tags[hctx_idx],
-				       hctx_idx);
-	if (!set->tags[hctx_idx] || !set->sched_tags[hctx_idx] || ret < 0) {
-		__blk_mq_free_rq_map_i(set, hctx_idx);
+	if (set->tags[hctx_idx])
+		ret = blk_mq_alloc_rqs(set, set->tags[hctx_idx], hctx_idx, set->queue_depth);
+
+	if (!set->tags[hctx_idx] || ret < 0) {
+		__blk_mq_free_rq_map_all(set, hctx_idx);
 		return false;
 	}
+
 	return true;
 }
 
@@ -1942,7 +1933,7 @@ static void blk_mq_map_swqueue(struct request_queue *q,
 		hctx_idx = q->mq_map[i];
 		/* unmapped hw queue can be remapped after CPU topo changed */
 		if (!set->tags[hctx_idx] &&
-		    !__blk_mq_alloc_rq_map_i(set, hctx_idx, q->nr_requests)) {
+		    !__blk_mq_alloc_rq_map(set, hctx_idx)) {
 			/*
 			 * If tags initialization fail for some hctx,
 			 * that hctx won't be brought online.  In this
@@ -2347,20 +2338,19 @@ static int blk_mq_queue_reinit_prepare(unsigned int cpu)
 	return 0;
 }
 
-static int __blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set,
-				  unsigned int nr_requests)
+static int __blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set)
 {
 	int i;
 
 	for (i = 0; i < set->nr_hw_queues; i++)
-		if (!__blk_mq_alloc_rq_map_i(set, i, nr_requests))
+		if (!__blk_mq_alloc_rq_map(set, i))
 			goto out_unwind;
 
 	return 0;
 
 out_unwind:
 	while (--i >= 0)
-		__blk_mq_free_rq_map_i(set, i);
+		blk_mq_free_rq_map(set->tags[i]);
 
 	return -ENOMEM;
 }
@@ -2370,15 +2360,14 @@ out_unwind:
  * may reduce the depth asked for, if memory is tight. set->queue_depth
  * will be updated to reflect the allocated depth.
  */
-static int blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set,
-				unsigned int nr_requests)
+static int blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set)
 {
 	unsigned int depth;
 	int err;
 
 	depth = set->queue_depth;
 	do {
-		err = __blk_mq_alloc_rq_maps(set, nr_requests);
+		err = __blk_mq_alloc_rq_maps(set);
 		if (!err)
 			break;
 
@@ -2449,15 +2438,10 @@ int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set)
 	if (!set->tags)
 		return -ENOMEM;
 
-	set->sched_tags = kzalloc_node(nr_cpu_ids * sizeof(struct blk_mq_tags *),
-				       GFP_KERNEL, set->numa_node);
-	if (!set->sched_tags)
-		goto free_drv_tags;
-
 	set->mq_map = kzalloc_node(sizeof(*set->mq_map) * nr_cpu_ids,
 			GFP_KERNEL, set->numa_node);
 	if (!set->mq_map)
-		goto free_sched_tags;
+		goto free_drv_tags;
 
 	if (set->ops->map_queues)
 		ret = set->ops->map_queues(set);
@@ -2466,7 +2450,7 @@ int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set)
 	if (ret)
 		goto free_mq_map;
 
-	ret = blk_mq_alloc_rq_maps(set, set->queue_depth/*q->nr_requests*/);
+	ret = blk_mq_alloc_rq_maps(set);
 	if (ret)
 		goto free_mq_map;
 
@@ -2478,9 +2462,6 @@ int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set)
 free_mq_map:
 	kfree(set->mq_map);
 	set->mq_map = NULL;
-free_sched_tags:
-	kfree(set->sched_tags);
-	set->sched_tags = NULL;
 free_drv_tags:
 	kfree(set->tags);
 	set->tags = NULL;
@@ -2496,15 +2477,11 @@ void blk_mq_free_tag_set(struct blk_mq_tag_set *set)
 		if (set->tags[i]) {
 			blk_mq_free_rqs(set, set->tags[i], i);
 			blk_mq_free_rq_map(set->tags[i]);
-			blk_mq_free_rq_map(set->sched_tags[i]);
 		}
 	}
 
 	kfree(set->mq_map);
 	set->mq_map = NULL;
-
-	kfree(set->sched_tags);
-	set->sched_tags = NULL;
 
 	kfree(set->tags);
 	set->tags = NULL;

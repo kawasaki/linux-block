@@ -46,7 +46,7 @@ struct blk_mq_tags *blk_mq_alloc_rq_map(struct blk_mq_tag_set *set,
 					unsigned int nr_tags,
 					unsigned int reserved_tags);
 int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
-		     unsigned int hctx_idx);
+		     unsigned int hctx_idx, unsigned int depth);
 
 /*
  * Internal helpers for request insertion into sw queues
@@ -134,6 +134,7 @@ void __blk_mq_finish_request(struct blk_mq_hw_ctx *hctx, struct blk_mq_ctx *ctx,
 				struct request *rq);
 void blk_mq_finish_request(struct request *rq);
 struct request *__blk_mq_alloc_request(struct blk_mq_alloc_data *data,
+					struct blk_mq_tags *tags,
 					unsigned int op);
 
 static inline bool blk_mq_hctx_stopped(struct blk_mq_hw_ctx *hctx)

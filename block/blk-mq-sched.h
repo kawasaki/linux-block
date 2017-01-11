@@ -2,6 +2,7 @@
 #define BLK_MQ_SCHED_H
 
 #include "blk-mq.h"
+#include "blk-mq-tag.h"
 
 int blk_mq_sched_init_hctx_data(struct request_queue *q, size_t size,
 				int (*init)(struct blk_mq_hw_ctx *),
@@ -22,6 +23,9 @@ bool blk_mq_sched_try_insert_merge(struct request_queue *q, struct request *rq);
 void blk_mq_sched_dispatch_requests(struct blk_mq_hw_ctx *hctx);
 
 int blk_mq_sched_init(struct request_queue *q);
+
+int blk_mq_sched_setup(struct request_queue *q);
+void blk_mq_sched_teardown(struct request_queue *q);
 
 static inline bool
 blk_mq_sched_bio_merge(struct request_queue *q, struct bio *bio)
@@ -112,6 +116,10 @@ blk_mq_sched_completed_request(struct blk_mq_hw_ctx *hctx, struct request *rq)
 
 	if (e && e->type->ops.mq.completed_request)
 		e->type->ops.mq.completed_request(hctx, rq);
+
+	BUG_ON(rq->sched_tag == -1);
+
+	blk_mq_put_tag(hctx, hctx->sched_tags, rq->mq_ctx, rq->sched_tag);
 
 	if (test_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state)) {
 		clear_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state);

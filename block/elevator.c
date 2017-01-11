@@ -235,12 +235,17 @@ int elevator_init(struct request_queue *q, char *name)
 		}
 	}
 
-	if (e->uses_mq)
-		err = e->ops.mq.init_sched(q, e);
-	else
+	if (e->uses_mq) {
+		err = blk_mq_sched_setup(q);
+		if (!err)
+			err = e->ops.mq.init_sched(q, e);
+	} else
 		err = e->ops.sq.elevator_init_fn(q, e);
-	if (err)
+	if (err) {
+		if (e->uses_mq)
+			blk_mq_sched_teardown(q);
 		elevator_put(e);
+	}
 	return err;
 }
 EXPORT_SYMBOL(elevator_init);

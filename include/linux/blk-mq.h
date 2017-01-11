@@ -73,7 +73,6 @@ struct blk_mq_tag_set {
 	void			*driver_data;
 
 	struct blk_mq_tags	**tags;
-	struct blk_mq_tags	**sched_tags;
 
 	struct mutex		tag_list_lock;
 	struct list_head	tag_list;
