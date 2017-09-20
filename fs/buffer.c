@@ -260,7 +260,7 @@ static void free_more_memory(void)
 	struct zoneref *z;
 	int nid;
 
-	wakeup_flusher_threads(0, WB_REASON_FREE_MORE_MEM);
+	wakeup_flusher_threads(WB_REASON_FREE_MORE_MEM);
 	yield();
 
 	for_each_online_node(nid) {
