@@ -478,22 +478,26 @@ static void sbq_wake_up(struct sbitmap_queue *sbq)
 
 	wait_cnt = atomic_dec_return(&ws->wait_cnt);
 	if (wait_cnt <= 0) {
+		int ret;
+
 		wake_batch = READ_ONCE(sbq->wake_batch);
+
 		/*
 		 * Pairs with the memory barrier in sbitmap_queue_resize() to
 		 * ensure that we see the batch size update before the wait
 		 * count is reset.
 		 */
 		smp_mb__before_atomic();
+
 		/*
-		 * If there are concurrent callers to sbq_wake_up(), the last
-		 * one to decrement the wait count below zero will bump it back
-		 * up. If there is a concurrent resize, the count reset will
-		 * either cause the cmpxchg to fail or overwrite after the
-		 * cmpxchg.
+		 * For concurrent callers (either resize, or just multiple
+		 * concurrent wakeups of waiters), the one that wins the
+		 * cmpxchg() race increments the waiter index.
 		 */
-		atomic_cmpxchg(&ws->wait_cnt, wait_cnt, wait_cnt + wake_batch);
-		sbq_index_atomic_inc(&sbq->wake_index);
+		ret = atomic_cmpxchg(&ws->wait_cnt, wait_cnt, wake_batch);
+		if (ret == wait_cnt)
+			sbq_index_atomic_inc(&sbq->wake_index);
+
 		wake_up_nr(&ws->wait, wake_batch);
 	}
 }
