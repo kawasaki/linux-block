@@ -1758,34 +1758,13 @@ static void io_iopoll_req_issued(struct io_kiocb *req, unsigned int issue_flags)
 	}
 }
 
-static bool io_bdev_nowait(struct block_device *bdev)
-{
-	return !bdev || bdev_nowait(bdev);
-}
-
 /*
  * If we tracked the file through the SCM inflight mechanism, we could support
  * any file. For now, just ensure that anything potentially problematic is done
  * inline.
  */
-static bool __io_file_supports_nowait(struct file *file, umode_t mode)
+static bool __io_file_supports_nowait(struct file *file)
 {
-	if (S_ISBLK(mode)) {
-		if (IS_ENABLED(CONFIG_BLOCK) &&
-		    io_bdev_nowait(I_BDEV(file->f_mapping->host)))
-			return true;
-		return false;
-	}
-	if (S_ISSOCK(mode))
-		return true;
-	if (S_ISREG(mode)) {
-		if (IS_ENABLED(CONFIG_BLOCK) &&
-		    io_bdev_nowait(file->f_inode->i_sb->s_bdev) &&
-		    !io_is_uring_fops(file))
-			return true;
-		return false;
-	}
-
 	/* any ->read/write should understand O_NONBLOCK */
 	if (file->f_flags & O_NONBLOCK)
 		return true;
@@ -1799,12 +1778,11 @@ static bool __io_file_supports_nowait(struct file *file, umode_t mode)
  */
 unsigned int io_file_get_flags(struct file *file)
 {
-	umode_t mode = file_inode(file)->i_mode;
 	unsigned int res = 0;
 
-	if (S_ISREG(mode))
+	if (S_ISREG(file_inode(file)->i_mode))
 		res |= FFS_ISREG;
-	if (__io_file_supports_nowait(file, mode))
+	if (__io_file_supports_nowait(file))
 		res |= FFS_NOWAIT;
 	return res;
 }
