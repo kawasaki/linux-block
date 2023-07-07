@@ -420,6 +420,8 @@ struct io_ring_ctx {
 	unsigned short			n_sqe_pages;
 	struct page			**ring_pages;
 	struct page			**sqe_pages;
+
+	struct completion		*exit_comp;
 };
 
 struct io_tw_state {
