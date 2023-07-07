@@ -528,7 +528,11 @@ static void io_queue_iowq(struct io_kiocb *req)
 	 * procedure rather than attempt to run this request (or create a new
 	 * worker for it).
 	 */
-	if (WARN_ON_ONCE(!same_thread_group(req->task, current)))
+	WARN_ON_ONCE(!io_ring_ref_is_dying(req->ctx) &&
+		     !same_thread_group(req->task, current));
+
+	if (!same_thread_group(req->task, current) ||
+	    io_ring_ref_is_dying(req->ctx))
 		req->work.flags |= IO_WQ_WORK_CANCEL;
 
 	trace_io_uring_queue_async_work(req, io_wq_is_hashed(&req->work));
@@ -1196,7 +1200,8 @@ static void io_req_normal_work_add(struct io_kiocb *req)
 		return;
 	}
 
-	if (likely(!task_work_add(req->task, &tctx->task_work, ctx->notify_method)))
+	if (!io_ring_ref_is_dying(ctx) &&
+	    !task_work_add(req->task, &tctx->task_work, ctx->notify_method))
 		return;
 
 	io_fallback_tw(tctx, false);
