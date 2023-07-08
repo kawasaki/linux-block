@@ -131,6 +131,11 @@ ssize_t iomap_dio_complete(struct iomap_dio *dio)
 }
 EXPORT_SYMBOL_GPL(iomap_dio_complete);
 
+static ssize_t iomap_dio_deferred_complete(void *data)
+{
+	return iomap_dio_complete(data);
+}
+
 static void iomap_dio_complete_work(struct work_struct *work)
 {
 	struct iomap_dio *dio = container_of(work, struct iomap_dio, aio.work);
@@ -167,6 +172,25 @@ void iomap_dio_bio_end_io(struct bio *bio)
 		} else if ((dio->flags & IOMAP_DIO_INLINE_COMP) && in_task()) {
 			WRITE_ONCE(dio->iocb->private, NULL);
 			iomap_dio_complete_work(&dio->aio.work);
+		} else if ((dio->flags & IOMAP_DIO_INLINE_COMP) &&
+			   (iocb->ki_flags & IOCB_DIO_DEFER)) {
+			/* only polled IO cares about private cleared */
+			iocb->private = dio;
+			iocb->dio_complete = iomap_dio_deferred_complete;
+			/*
+			 * Invoke ->ki_complete() directly. We've assigned
+			 * out dio_complete callback handler, and since the
+			 * issuer set IOCB_DIO_DEFER, we know their
+			 * ki_complete handler will notice ->dio_complete
+			 * being set and will defer calling that handler
+			 * until it can be done from a safe task context.
+			 *
+			 * Note that the 'res' being passed in here is
+			 * not important for this case. The actual completion
+			 * value of the request will be gotten from dio_complete
+			 * when that is run by the issuer.
+			 */
+			iocb->ki_complete(iocb, 0);
 		} else {
 			struct inode *inode = file_inode(iocb->ki_filp);
 
