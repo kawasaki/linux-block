@@ -238,7 +238,7 @@ struct io_ring_ctx {
 
 		struct task_struct	*submitter_task;
 		struct io_rings		*rings;
-		struct percpu_ref	refs;
+		unsigned long		ref_ptr;
 
 		enum task_work_notify_mode	notify_method;
 		unsigned			sq_thread_idle;
