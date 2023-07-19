@@ -20,6 +20,7 @@
  * Private flags for iomap_dio, must not overlap with the public ones in
  * iomap.h:
  */
+#define IOMAP_DIO_INLINE_COMP	(1 << 27)
 #define IOMAP_DIO_WRITE_FUA	(1 << 28)
 #define IOMAP_DIO_NEED_SYNC	(1 << 29)
 #define IOMAP_DIO_WRITE		(1 << 30)
@@ -171,19 +172,24 @@ void iomap_dio_bio_end_io(struct bio *bio)
 	}
 
 	/*
-	 * If this dio is an async write, queue completion work for async
-	 * handling. Reads can always complete inline.
+	 * Flagged with IOMAP_DIO_INLINE_COMP, we can complete it inline
 	 */
-	if (dio->flags & IOMAP_DIO_WRITE) {
-		struct inode *inode = file_inode(iocb->ki_filp);
-
-		WRITE_ONCE(iocb->private, NULL);
-		INIT_WORK(&dio->aio.work, iomap_dio_complete_work);
-		queue_work(inode->i_sb->s_dio_done_wq, &dio->aio.work);
-	} else {
+	if (dio->flags & IOMAP_DIO_INLINE_COMP) {
 		WRITE_ONCE(iocb->private, NULL);
 		iomap_dio_complete_work(&dio->aio.work);
+		goto release_bio;
 	}
+
+	/*
+	 * Async DIO completion that requires filesystem level completion work
+	 * gets punted to a work queue to complete as the operation may require
+	 * more IO to be issued to finalise filesystem metadata changes or
+	 * guarantee data integrity.
+	 */
+	WRITE_ONCE(iocb->private, NULL);
+	INIT_WORK(&dio->aio.work, iomap_dio_complete_work);
+	queue_work(file_inode(iocb->ki_filp)->i_sb->s_dio_done_wq,
+			&dio->aio.work);
 
 release_bio:
 	if (should_dirty) {
@@ -524,6 +530,9 @@ __iomap_dio_rw(struct kiocb *iocb, struct iov_iter *iter,
 		iomi.flags |= IOMAP_NOWAIT;
 
 	if (iov_iter_rw(iter) == READ) {
+		/* reads can always complete inline */
+		dio->flags |= IOMAP_DIO_INLINE_COMP;
+
 		if (iomi.pos >= dio->i_size)
 			goto out_free_dio;
 
