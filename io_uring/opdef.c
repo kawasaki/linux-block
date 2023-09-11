@@ -460,6 +460,15 @@ const struct io_issue_def io_issue_defs[] = {
 		.prep			= io_eopnotsupp_prep,
 #endif
 	},
+	[IORING_OP_READ_MULTISHOT] = {
+		.needs_file		= 1,
+		.unbound_nonreg_file	= 1,
+		.pollin			= 1,
+		.buffer_select		= 1,
+		.audit_skip		= 1,
+		.prep			= io_read_mshot_prep,
+		.issue			= io_read_mshot,
+	},
 };
 
 const struct io_cold_def io_cold_defs[] = {
@@ -691,6 +700,9 @@ const struct io_cold_def io_cold_defs[] = {
 	},
 	[IORING_OP_FUTEX_WAITV] = {
 		.name			= "FUTEX_WAITV",
+	},
+	[IORING_OP_READ_MULTISHOT] = {
+		.name			= "READ_MULTISHOT",
 	},
 };
 
