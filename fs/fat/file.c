@@ -507,7 +507,9 @@ int fat_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 	 * sequence.
 	 */
 	if (attr->ia_valid & ATTR_SIZE) {
-		inode_dio_wait(inode);
+		error = inode_dio_wait(inode);
+		if (error)
+			goto out;
 
 		if (attr->ia_size > inode->i_size) {
 			error = fat_cont_expand(inode, attr->ia_size);
