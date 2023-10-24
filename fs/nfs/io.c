@@ -15,12 +15,13 @@
 #include "internal.h"
 
 /* Call with exclusively locked inode->i_rwsem */
-static void nfs_block_o_direct(struct nfs_inode *nfsi, struct inode *inode)
+static int nfs_block_o_direct(struct nfs_inode *nfsi, struct inode *inode)
 {
 	if (test_bit(NFS_INO_ODIRECT, &nfsi->flags)) {
 		clear_bit(NFS_INO_ODIRECT, &nfsi->flags);
-		inode_dio_wait(inode);
+		return inode_dio_wait(inode);
 	}
+	return 0;
 }
 
 /**
@@ -39,19 +40,22 @@ static void nfs_block_o_direct(struct nfs_inode *nfsi, struct inode *inode)
  * Note that buffered writes and truncates both take a write lock on
  * inode->i_rwsem, meaning that those are serialised w.r.t. the reads.
  */
-void
+int
 nfs_start_io_read(struct inode *inode)
 {
 	struct nfs_inode *nfsi = NFS_I(inode);
+	int ret;
+
 	/* Be an optimist! */
 	down_read(&inode->i_rwsem);
 	if (test_bit(NFS_INO_ODIRECT, &nfsi->flags) == 0)
-		return;
+		return 0;
 	up_read(&inode->i_rwsem);
 	/* Slow path.... */
 	down_write(&inode->i_rwsem);
-	nfs_block_o_direct(nfsi, inode);
+	ret = nfs_block_o_direct(nfsi, inode);
 	downgrade_write(&inode->i_rwsem);
+	return ret;
 }
 
 /**

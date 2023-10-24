@@ -463,7 +463,7 @@ extern const struct netfs_request_ops nfs_netfs_ops;
 #endif
 
 /* io.c */
-extern void nfs_start_io_read(struct inode *inode);
+extern int nfs_start_io_read(struct inode *inode);
 extern void nfs_end_io_read(struct inode *inode);
 extern void nfs_start_io_write(struct inode *inode);
 extern void nfs_end_io_write(struct inode *inode);
