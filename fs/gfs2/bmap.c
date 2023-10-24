@@ -2135,7 +2135,9 @@ int gfs2_setattr_size(struct inode *inode, u64 newsize)
 	if (ret)
 		return ret;
 
-	inode_dio_wait(inode);
+	ret = inode_dio_wait(inode);
+	if (ret)
+		return ret;
 
 	ret = gfs2_qa_get(ip);
 	if (ret)
