@@ -455,7 +455,9 @@ static ssize_t ntfs_prepare_file_for_write(struct kiocb *iocb,
 		 * Wait for ongoing direct i/o to complete before proceeding.
 		 * New direct i/o cannot start as we hold i_mutex.
 		 */
-		inode_dio_wait(vi);
+		err = inode_dio_wait(vi);
+		if (err)
+			return err;
 		err = ntfs_attr_extend_initialized(ni, pos);
 		if (unlikely(err < 0))
 			ntfs_error(vi->i_sb, "Cannot perform write to inode "
@@ -1737,7 +1739,10 @@ static ssize_t ntfs_perform_write(struct file *file, struct iov_iter *i,
 	if (unlikely(NInoTruncateFailed(ni))) {
 		int err;
 
-		inode_dio_wait(vi);
+		err = inode_dio_wait(vi);
+		if (err)
+			return err;
+
 		err = ntfs_truncate(vi);
 		if (err || NInoTruncateFailed(ni)) {
 			if (!err)
