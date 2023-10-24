@@ -985,7 +985,9 @@ int nilfs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 
 	if ((iattr->ia_valid & ATTR_SIZE) &&
 	    iattr->ia_size != i_size_read(inode)) {
-		inode_dio_wait(inode);
+		err = inode_dio_wait(inode);
+		if (err)
+			return err;
 		truncate_setsize(inode, iattr->ia_size);
 		nilfs_truncate(inode);
 	}
