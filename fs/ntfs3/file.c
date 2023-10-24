@@ -480,7 +480,9 @@ static long ntfs_fallocate(struct file *file, int mode, loff_t vbo, loff_t len)
 
 	if (mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_COLLAPSE_RANGE |
 		    FALLOC_FL_INSERT_RANGE)) {
-		inode_dio_wait(inode);
+		err = inode_dio_wait(inode);
+		if (err)
+			goto out;
 		filemap_invalidate_lock(mapping);
 		map_locked = true;
 	}
@@ -675,7 +677,9 @@ int ntfs3_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 			err = -EOPNOTSUPP;
 			goto out;
 		}
-		inode_dio_wait(inode);
+		err = inode_dio_wait(inode);
+		if (err)
+			goto out;
 		oldsize = inode->i_size;
 		newsize = attr->ia_size;
 
