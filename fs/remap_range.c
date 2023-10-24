@@ -311,9 +311,14 @@ __generic_remap_file_range_prep(struct file *file_in, loff_t pos_in,
 		return ret;
 
 	/* Wait for the completion of any pending IOs on both files */
-	inode_dio_wait(inode_in);
-	if (!same_inode)
-		inode_dio_wait(inode_out);
+	ret = inode_dio_wait(inode_in);
+	if (ret)
+		return ret;
+	if (!same_inode) {
+		ret = inode_dio_wait(inode_out);
+		if (ret)
+			return ret;
+	}
 
 	ret = filemap_write_and_wait_range(inode_in->i_mapping,
 			pos_in, pos_in + *len - 1);
