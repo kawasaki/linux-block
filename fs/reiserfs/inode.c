@@ -3287,7 +3287,11 @@ int reiserfs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 			goto out;
 		}
 
-		inode_dio_wait(inode);
+		error = inode_dio_wait(inode);
+		if (error) {
+			reiserfs_write_unlock(inode->i_sb);
+			goto out;
+		}
 
 		/* fill in hole pointers in the expanding truncate case. */
 		if (attr->ia_size > inode->i_size) {
