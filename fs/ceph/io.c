@@ -19,16 +19,20 @@
 #include "io.h"
 
 /* Call with exclusively locked inode->i_rwsem */
-static void ceph_block_o_direct(struct ceph_inode_info *ci, struct inode *inode)
+static int ceph_block_o_direct(struct ceph_inode_info *ci, struct inode *inode)
 {
+	int ret = 0;
+
 	lockdep_assert_held_write(&inode->i_rwsem);
 
 	if (READ_ONCE(ci->i_ceph_flags) & CEPH_I_ODIRECT) {
 		spin_lock(&ci->i_ceph_lock);
 		ci->i_ceph_flags &= ~CEPH_I_ODIRECT;
 		spin_unlock(&ci->i_ceph_lock);
-		inode_dio_wait(inode);
+		ret = inode_dio_wait(inode);
 	}
+
+	return ret;
 }
 
 /**
@@ -47,20 +51,22 @@ static void ceph_block_o_direct(struct ceph_inode_info *ci, struct inode *inode)
  * Note that buffered writes and truncates both take a write lock on
  * inode->i_rwsem, meaning that those are serialised w.r.t. the reads.
  */
-void
+int
 ceph_start_io_read(struct inode *inode)
 {
 	struct ceph_inode_info *ci = ceph_inode(inode);
+	int ret;
 
 	/* Be an optimist! */
 	down_read(&inode->i_rwsem);
 	if (!(READ_ONCE(ci->i_ceph_flags) & CEPH_I_ODIRECT))
-		return;
+		return 0;
 	up_read(&inode->i_rwsem);
 	/* Slow path.... */
 	down_write(&inode->i_rwsem);
-	ceph_block_o_direct(ci, inode);
+	ret = ceph_block_o_direct(ci, inode);
 	downgrade_write(&inode->i_rwsem);
+	return ret;
 }
 
 /**
@@ -83,11 +89,18 @@ ceph_end_io_read(struct inode *inode)
  * Declare that a buffered write operation is about to start, and ensure
  * that we block all direct I/O.
  */
-void
+int
 ceph_start_io_write(struct inode *inode)
 {
+	int ret;
+
 	down_write(&inode->i_rwsem);
-	ceph_block_o_direct(ceph_inode(inode), inode);
+	ret = ceph_block_o_direct(ceph_inode(inode), inode);
+	if (ret) {
+		up_write(&inode->i_rwsem);
+		return ret;
+	}
+	return 0;
 }
 
 /**
