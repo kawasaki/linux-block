@@ -2428,14 +2428,28 @@ static int __inode_dio_wait(struct inode *inode)
 {
 	wait_queue_head_t *wq = bit_waitqueue(&inode->i_state, __I_DIO_WAKEUP);
 	DEFINE_WAIT_BIT(q, &inode->i_state, __I_DIO_WAKEUP);
+	int ret = 0;
 
 	do {
-		prepare_to_wait(wq, &q.wq_entry, TASK_UNINTERRUPTIBLE);
-		if (atomic_read(&inode->i_dio_count))
-			schedule();
+		prepare_to_wait(wq, &q.wq_entry, TASK_INTERRUPTIBLE);
+		if (!atomic_read(&inode->i_dio_count))
+			break;
+
+		schedule();
+
+		/*
+		 * If there's potential task_work that needs running, said
+		 * task_work could be holding an i_dio_count reference.
+		 * Ensure we drop out and get that processed and then
+		 * restart the sync syscall that caused it.
+		 */
+		if (signal_pending(current)) {
+			ret = -ERESTARTSYS;
+			break;
+		}
 	} while (atomic_read(&inode->i_dio_count));
 	finish_wait(wq, &q.wq_entry);
-	return 0;
+	return ret;
 }
 
 /**
