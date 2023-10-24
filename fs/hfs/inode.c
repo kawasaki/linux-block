@@ -646,7 +646,9 @@ int hfs_inode_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 
 	if ((attr->ia_valid & ATTR_SIZE) &&
 	    attr->ia_size != i_size_read(inode)) {
-		inode_dio_wait(inode);
+		error = inode_dio_wait(inode);
+		if (error)
+			return error;
 
 		error = inode_newsize_ok(inode, attr->ia_size);
 		if (error)
