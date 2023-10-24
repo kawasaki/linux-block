@@ -3958,7 +3958,9 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
 	}
 
 	/* Wait all existing dio workers, newcomers will block on i_rwsem */
-	inode_dio_wait(inode);
+	ret = inode_dio_wait(inode);
+	if (ret)
+		goto out_mutex;
 
 	ret = file_modified(file);
 	if (ret)
@@ -5395,7 +5397,9 @@ int ext4_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 			 * Blocks are going to be removed from the inode. Wait
 			 * for dio in flight.
 			 */
-			inode_dio_wait(inode);
+			error = inode_dio_wait(inode);
+			if (error)
+				goto err_out;
 		}
 
 		filemap_invalidate_lock(inode->i_mapping);
@@ -5990,7 +5994,9 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
 		return -EROFS;
 
 	/* Wait for all existing dio workers */
-	inode_dio_wait(inode);
+	err = inode_dio_wait(inode);
+	if (err)
+		return err;
 
 	/*
 	 * Before flushing the journal and switching inode's aops, we have

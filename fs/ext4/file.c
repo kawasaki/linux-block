@@ -475,8 +475,11 @@ restart:
 			ret = -EAGAIN;
 			goto out;
 		}
-		if (unaligned_io && (!overwrite || *unwritten))
-			inode_dio_wait(inode);
+		if (unaligned_io && (!overwrite || *unwritten)) {
+			ret = inode_dio_wait(inode);
+			if (ret)
+				goto out;
+		}
 		*dio_flags = IOMAP_DIO_FORCE_WAIT;
 	}
 

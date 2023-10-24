@@ -4562,7 +4562,9 @@ static long ext4_zero_range(struct file *file, loff_t offset,
 	flags = EXT4_GET_BLOCKS_CREATE_UNWRIT_EXT;
 
 	/* Wait all existing dio workers, newcomers will block on i_rwsem */
-	inode_dio_wait(inode);
+	ret = inode_dio_wait(inode);
+	if (ret)
+		goto out_mutex;
 
 	ret = file_modified(file);
 	if (ret)
@@ -4748,7 +4750,9 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 	}
 
 	/* Wait all existing dio workers, newcomers will block on i_rwsem */
-	inode_dio_wait(inode);
+	ret = inode_dio_wait(inode);
+	if (ret)
+		goto out;
 
 	ret = file_modified(file);
 	if (ret)
@@ -5307,7 +5311,9 @@ static int ext4_collapse_range(struct file *file, loff_t offset, loff_t len)
 	}
 
 	/* Wait for existing dio to complete */
-	inode_dio_wait(inode);
+	ret = inode_dio_wait(inode);
+	if (ret)
+		goto out_mutex;
 
 	ret = file_modified(file);
 	if (ret)
@@ -5450,7 +5456,9 @@ static int ext4_insert_range(struct file *file, loff_t offset, loff_t len)
 	}
 
 	/* Wait for existing dio to complete */
-	inode_dio_wait(inode);
+	ret = inode_dio_wait(inode);
+	if (ret)
+		goto out_mutex;
 
 	ret = file_modified(file);
 	if (ret)

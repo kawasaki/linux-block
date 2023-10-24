@@ -415,8 +415,12 @@ static long swap_inode_boot_loader(struct super_block *sb,
 		goto err_out;
 
 	/* Wait for all existing dio workers */
-	inode_dio_wait(inode);
-	inode_dio_wait(inode_bl);
+	err = inode_dio_wait(inode);
+	if (err)
+		goto err_out;
+	err = inode_dio_wait(inode_bl);
+	if (err)
+		goto err_out;
 
 	truncate_inode_pages(&inode->i_data, 0);
 	truncate_inode_pages(&inode_bl->i_data, 0);
@@ -640,7 +644,9 @@ static int ext4_ioctl_setflags(struct inode *inode,
 	 */
 	if (S_ISREG(inode->i_mode) && !IS_IMMUTABLE(inode) &&
 	    (flags & EXT4_IMMUTABLE_FL)) {
-		inode_dio_wait(inode);
+		err = inode_dio_wait(inode);
+		if (err)
+			goto flags_out;
 		err = filemap_write_and_wait(inode->i_mapping);
 		if (err)
 			goto flags_out;

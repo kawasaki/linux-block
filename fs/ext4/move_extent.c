@@ -606,8 +606,12 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 	lock_two_nondirectories(orig_inode, donor_inode);
 
 	/* Wait for all existing dio workers */
-	inode_dio_wait(orig_inode);
-	inode_dio_wait(donor_inode);
+	ret = inode_dio_wait(orig_inode);
+	if (ret)
+		return ret;
+	ret = inode_dio_wait(donor_inode);
+	if (ret)
+		return ret;
 
 	/* Protect extent tree against block allocations via delalloc */
 	ext4_double_down_write_data_sem(orig_inode, donor_inode);
