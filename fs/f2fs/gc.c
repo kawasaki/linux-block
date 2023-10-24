@@ -1629,7 +1629,9 @@ next_step:
 				locked = true;
 
 				/* wait for all inflight aio data */
-				inode_dio_wait(inode);
+				err = inode_dio_wait(inode);
+				/* this cannot fail as we're in a kthread */
+				WARN_ON_ONCE(err);
 			}
 
 			start_bidx = f2fs_start_bidx_of_node(nofs, inode)
