@@ -132,7 +132,12 @@ static inline errseq_t file_sample_sb_err(struct file *file)
  */
 static inline int inode_drain_writes(struct inode *inode)
 {
-	inode_dio_wait(inode);
+	int ret;
+
+	ret = inode_dio_wait(inode);
+	if (ret)
+		return ret;
+
 	return filemap_write_and_wait(inode->i_mapping);
 }
 
