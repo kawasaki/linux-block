@@ -190,7 +190,7 @@ int zonefs_file_truncate(struct inode *inode, loff_t isize)
 	struct zonefs_zone *z = zonefs_inode_zone(inode);
 	loff_t old_isize;
 	enum req_op op;
-	int ret = 0;
+	int ret;
 
 	/*
 	 * Only sequential zone files can be truncated and truncation is allowed
@@ -207,7 +207,9 @@ int zonefs_file_truncate(struct inode *inode, loff_t isize)
 	else
 		return -EPERM;
 
-	inode_dio_wait(inode);
+	ret = inode_dio_wait(inode);
+	if (ret)
+		return ret;
 
 	/* Serialize against page faults */
 	filemap_invalidate_lock(inode->i_mapping);
