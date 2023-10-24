@@ -5012,7 +5012,9 @@ static int btrfs_setsize(struct inode *inode, struct iattr *attr)
 
 		truncate_setsize(inode, newsize);
 
-		inode_dio_wait(inode);
+		ret = inode_dio_wait(inode);
+		if (ret)
+			return ret;
 
 		ret = btrfs_truncate(BTRFS_I(inode), newsize == oldsize);
 		if (ret && inode->i_nlink) {
