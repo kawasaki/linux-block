@@ -829,7 +829,9 @@ xfs_setattr_size(
 	/*
 	 * Wait for all direct I/O to complete.
 	 */
-	inode_dio_wait(inode);
+	error = inode_dio_wait(inode);
+	if (error)
+		return error;
 
 	/*
 	 * File data changes must be complete before we start the transaction to

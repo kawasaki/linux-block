@@ -51,7 +51,9 @@ xchk_setup_inode_bmap(
 
 		xchk_ilock(sc, XFS_MMAPLOCK_EXCL);
 
-		inode_dio_wait(VFS_I(sc->ip));
+		error = inode_dio_wait(VFS_I(sc->ip));
+		if (error)
+			goto out;
 
 		/*
 		 * Try to flush all incore state to disk before we examine the

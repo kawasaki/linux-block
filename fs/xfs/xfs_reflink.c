@@ -1696,7 +1696,9 @@ xfs_reflink_unshare(
 
 	trace_xfs_reflink_unshare(ip, offset, len);
 
-	inode_dio_wait(inode);
+	error = inode_dio_wait(inode);
+	if (error)
+		goto out;
 
 	if (IS_DAX(inode))
 		error = dax_file_unshare(inode, offset, len,

@@ -469,7 +469,9 @@ restart:
 			 * XFS_IOLOCK_EXCL, and so for most cases this wait is a
 			 * no-op.
 			 */
-			inode_dio_wait(inode);
+			error = inode_dio_wait(inode);
+			if (error)
+				return error;
 			drained_dio = true;
 			goto restart;
 		}
@@ -679,8 +681,11 @@ retry_exclusive:
 	 * conversions from the AIO end_io handler.  Wait for all other I/O to
 	 * drain first.
 	 */
-	if (flags & IOMAP_DIO_FORCE_WAIT)
-		inode_dio_wait(VFS_I(ip));
+	if (flags & IOMAP_DIO_FORCE_WAIT) {
+		ret = inode_dio_wait(VFS_I(ip));
+		if (ret)
+			goto out_unlock;
+	}
 
 	trace_xfs_file_direct_write(iocb, from);
 	ret = iomap_dio_rw(iocb, from, &xfs_direct_write_iomap_ops,
@@ -973,7 +978,9 @@ xfs_file_fallocate(
 	 * the on disk and in memory inode sizes, and the operations that follow
 	 * require the in-memory size to be fully up-to-date.
 	 */
-	inode_dio_wait(inode);
+	error = inode_dio_wait(inode);
+	if (error)
+		goto out_unlock;
 
 	/*
 	 * Now AIO and DIO has drained we flush and (if necessary) invalidate

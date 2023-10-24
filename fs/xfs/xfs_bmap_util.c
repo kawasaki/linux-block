@@ -726,7 +726,9 @@ xfs_free_eofblocks(
 		return error;
 
 	/* Wait on dio to ensure i_size has settled. */
-	inode_dio_wait(VFS_I(ip));
+	error = inode_dio_wait(VFS_I(ip));
+	if (error)
+		return error;
 
 	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_itruncate, 0, 0, 0, &tp);
 	if (error) {
