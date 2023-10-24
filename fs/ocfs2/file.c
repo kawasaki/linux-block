@@ -1157,7 +1157,9 @@ int ocfs2_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 		 * to avoid a deadlock between ocfs2_setattr() and
 		 * ocfs2_dio_end_io_write()
 		 */
-		inode_dio_wait(inode);
+		status = inode_dio_wait(inode);
+		if (status)
+			goto bail;
 
 		status = ocfs2_rw_lock(inode, 1);
 		if (status < 0) {
