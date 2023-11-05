@@ -411,7 +411,10 @@ int bchfs_truncate(struct mnt_idmap *idmap,
 		iattr->ia_valid |= ATTR_MTIME|ATTR_CTIME;
 	}
 
-	inode_dio_wait(&inode->v);
+	ret = inode_dio_wait(&inode->v);
+	if (ret)
+		return ret;
+
 	bch2_pagecache_block_get(inode);
 
 	ret = bch2_inode_find_by_inum(c, inode_inum(inode), &inode_u);
@@ -762,7 +765,10 @@ long bch2_fallocate_dispatch(struct file *file, int mode,
 		return -EROFS;
 
 	inode_lock(&inode->v);
-	inode_dio_wait(&inode->v);
+	ret = inode_dio_wait(&inode->v);
+	if (ret)
+		goto err_unlock;
+
 	bch2_pagecache_block_get(inode);
 
 	ret = file_modified(file);
@@ -781,6 +787,7 @@ long bch2_fallocate_dispatch(struct file *file, int mode,
 		ret = -EOPNOTSUPP;
 err:
 	bch2_pagecache_block_put(inode);
+err_unlock:
 	inode_unlock(&inode->v);
 	bch2_write_ref_put(c, BCH_WRITE_REF_fallocate);
 
@@ -863,8 +870,12 @@ loff_t bch2_remap_file_range(struct file *file_src, loff_t pos_src,
 
 	bch2_lock_inodes(INODE_LOCK|INODE_PAGECACHE_BLOCK, src, dst);
 
-	inode_dio_wait(&src->v);
-	inode_dio_wait(&dst->v);
+	ret = inode_dio_wait(&src->v);
+	if (!ret) {
+		ret = inode_dio_wait(&dst->v);
+		if (ret)
+			return ret;
+	}
 
 	ret = generic_remap_file_range_prep(file_src, pos_src,
 					    file_dst, pos_dst,
