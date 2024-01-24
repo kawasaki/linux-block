@@ -162,7 +162,12 @@ static inline size_t iov_length(const struct iovec *iov, unsigned long nr_segs)
 size_t copy_page_from_iter_atomic(struct page *page, size_t offset,
 				  size_t bytes, struct iov_iter *i);
 void iov_iter_advance(struct iov_iter *i, size_t bytes);
-void iov_iter_revert(struct iov_iter *i, size_t bytes);
+void __iov_iter_revert(struct iov_iter *i, size_t bytes);
+static inline void iov_iter_revert(struct iov_iter *i, size_t bytes)
+{
+	if (bytes)
+		__iov_iter_revert(i, bytes);
+}
 size_t fault_in_iov_iter_readable(const struct iov_iter *i, size_t bytes);
 size_t fault_in_iov_iter_writeable(const struct iov_iter *i, size_t bytes);
 size_t iov_iter_single_seg_count(const struct iov_iter *i);

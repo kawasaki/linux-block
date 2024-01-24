@@ -564,10 +564,8 @@ void iov_iter_advance(struct iov_iter *i, size_t size)
 }
 EXPORT_SYMBOL(iov_iter_advance);
 
-void iov_iter_revert(struct iov_iter *i, size_t unroll)
+void __iov_iter_revert(struct iov_iter *i, size_t unroll)
 {
-	if (!unroll)
-		return;
 	if (WARN_ON(unroll > MAX_RW_COUNT))
 		return;
 	i->count += unroll;
@@ -609,7 +607,7 @@ void iov_iter_revert(struct iov_iter *i, size_t unroll)
 		}
 	}
 }
-EXPORT_SYMBOL(iov_iter_revert);
+EXPORT_SYMBOL(__iov_iter_revert);
 
 /*
  * Return the count of just the current iov_iter segment.
