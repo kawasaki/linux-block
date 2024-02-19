@@ -441,6 +441,17 @@ int io_sendmsg(struct io_kiocb *req, unsigned int issue_flags)
 	    (sr->flags & IORING_RECVSEND_POLL_FIRST))
 		return io_setup_async_msg(req, kmsg, issue_flags);
 
+	if (io_do_buffer_select(req)) {
+		void __user *buf;
+		size_t len = sr->len;
+
+		buf = io_buffer_select(req, &len, issue_flags);
+		if (!buf)
+			return -ENOBUFS;
+
+		iov_iter_ubuf(&kmsg->msg.msg_iter, ITER_SOURCE, buf, len);
+	}
+
 	flags = sr->msg_flags;
 	if (issue_flags & IO_URING_F_NONBLOCK)
 		flags |= MSG_DONTWAIT;
@@ -472,7 +483,8 @@ int io_sendmsg(struct io_kiocb *req, unsigned int issue_flags)
 		ret += sr->done_io;
 	else if (sr->done_io)
 		ret = sr->done_io;
-	io_req_set_res(req, ret, 0);
+	cflags = io_put_kbuf(req, issue_flags);
+	io_req_set_res(req, ret, cflags);
 	return IOU_OK;
 }
 
@@ -483,6 +495,7 @@ int io_send(struct io_kiocb *req, unsigned int issue_flags)
 	size_t len = sr->len;
 	struct socket *sock;
 	struct msghdr msg;
+	unsigned int cflags;
 	unsigned flags;
 	int min_ret = 0;
 	int ret;
