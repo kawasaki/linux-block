@@ -351,9 +351,17 @@ enum io_uring_op {
  *				0 is reported if zerocopy was actually possible.
  *				IORING_NOTIF_USAGE_ZC_COPIED if data was copied
  *				(at least partially).
+ *
+ * IORING_SEND_MULTISHOT	Multishot send. Like the recv equivalent, must
+ *				be used with provided buffers. Keeps sending
+ *				from the given buffer group ID until it is
+ *				empty. Sets IORING_CQE_F_MORE if more
+ *				completions should be expected on behalf of
+ *				the same SQE.
  */
 #define IORING_RECVSEND_POLL_FIRST	(1U << 0)
 #define IORING_RECV_MULTISHOT		(1U << 1)
+#define IORING_SEND_MULTISHOT		IORING_RECV_MULTISHOT
 #define IORING_RECVSEND_FIXED_BUF	(1U << 2)
 #define IORING_SEND_ZC_REPORT_USAGE	(1U << 3)
 

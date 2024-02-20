@@ -393,6 +393,8 @@ void io_sendmsg_recvmsg_cleanup(struct io_kiocb *req)
 	kfree(io->free_iov);
 }
 
+#define SENDMSG_FLAGS (IORING_RECVSEND_POLL_FIRST | IORING_SEND_MULTISHOT)
+
 int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 {
 	struct io_sr_msg *sr = io_kiocb_to_cmd(req, struct io_sr_msg);
@@ -409,11 +411,17 @@ int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	sr->umsg = u64_to_user_ptr(READ_ONCE(sqe->addr));
 	sr->len = READ_ONCE(sqe->len);
 	sr->flags = READ_ONCE(sqe->ioprio);
-	if (sr->flags & ~IORING_RECVSEND_POLL_FIRST)
+	if (sr->flags & ~SENDMSG_FLAGS)
 		return -EINVAL;
 	sr->msg_flags = READ_ONCE(sqe->msg_flags) | MSG_NOSIGNAL;
 	if (sr->msg_flags & MSG_DONTWAIT)
 		req->flags |= REQ_F_NOWAIT;
+	if (sr->flags & IORING_SEND_MULTISHOT) {
+		if (!(req->flags & REQ_F_BUFFER_SELECT))
+			return -EINVAL;
+		req->flags |= REQ_F_APOLL_MULTISHOT;
+		sr->buf_group = req->buf_index;
+	}
 
 #ifdef CONFIG_COMPAT
 	if (req->ctx->compat)
@@ -421,6 +429,44 @@ int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 #endif
 	sr->done_io = 0;
 	return 0;
+}
+
+static inline bool io_send_finish(struct io_kiocb *req, int *ret,
+				  struct msghdr *msg, unsigned issue_flags)
+{
+	bool mshot_finished = *ret <= 0;
+	unsigned int cflags;
+
+	cflags = io_put_kbuf(req, issue_flags);
+
+	if (!(req->flags & REQ_F_APOLL_MULTISHOT)) {
+		io_req_set_res(req, *ret, cflags);
+		*ret = IOU_OK;
+		return true;
+	}
+
+	if (mshot_finished || req->flags & REQ_F_BL_EMPTY)
+		goto finish;
+
+	/*
+	 * Fill CQE for this receive and see if we should keep trying to
+	 * receive from this socket.
+	 */
+	if (io_fill_cqe_req_aux(req, issue_flags & IO_URING_F_COMPLETE_DEFER,
+				*ret, cflags | IORING_CQE_F_MORE)) {
+		io_mshot_prep_retry(req);
+		*ret = IOU_ISSUE_SKIP_COMPLETE;
+		return false;
+	}
+
+	/* Otherwise stop multishot but use the current result. */
+finish:
+	io_req_set_res(req, *ret, cflags);
+	if (issue_flags & IO_URING_F_MULTISHOT)
+		*ret = IOU_STOP_MULTISHOT;
+	else
+		*ret = IOU_OK;
+	return true;
 }
 
 int io_sendmsg(struct io_kiocb *req, unsigned int issue_flags)
@@ -505,7 +551,6 @@ int io_send(struct io_kiocb *req, unsigned int issue_flags)
 	size_t len = sr->len;
 	struct socket *sock;
 	struct msghdr msg;
-	unsigned int cflags;
 	unsigned flags;
 	int min_ret = 0;
 	int ret;
@@ -534,10 +579,18 @@ int io_send(struct io_kiocb *req, unsigned int issue_flags)
 	    (sr->flags & IORING_RECVSEND_POLL_FIRST))
 		return io_setup_async_addr(req, &__address, issue_flags);
 
+	if (!io_check_multishot(req, issue_flags))
+		return -EAGAIN;
+
 	sock = sock_from_file(req->file);
 	if (unlikely(!sock))
 		return -ENOTSOCK;
 
+	flags = sr->msg_flags;
+	if (issue_flags & IO_URING_F_NONBLOCK)
+		flags |= MSG_DONTWAIT;
+
+retry_multishot:
 	if (io_do_buffer_select(req)) {
 		void __user *buf;
 
@@ -552,19 +605,28 @@ int io_send(struct io_kiocb *req, unsigned int issue_flags)
 	if (unlikely(ret))
 		return ret;
 
-	flags = sr->msg_flags;
-	if (issue_flags & IO_URING_F_NONBLOCK)
-		flags |= MSG_DONTWAIT;
-	if (flags & MSG_WAITALL)
+	/*
+	 * If MSG_WAITALL is set, or this is a multishot send, then we need
+	 * the full amount. If just multishot is set, if we do a short send
+	 * then we complete the multishot sequence rather than continue on.
+	 */
+	if (flags & MSG_WAITALL || req->flags & REQ_F_APOLL_MULTISHOT)
 		min_ret = iov_iter_count(&msg.msg_iter);
 
 	flags &= ~MSG_INTERNAL_SENDMSG_FLAGS;
 	msg.msg_flags = flags;
 	ret = sock_sendmsg(sock, &msg);
 	if (ret < min_ret) {
-		if (ret == -EAGAIN && (issue_flags & IO_URING_F_NONBLOCK))
-			return io_setup_async_addr(req, &__address, issue_flags);
-
+		if (ret == -EAGAIN && (issue_flags & IO_URING_F_NONBLOCK)) {
+			ret = io_setup_async_addr(req, &__address, issue_flags);
+			if (ret != -EAGAIN)
+				return ret;
+			if (issue_flags & IO_URING_F_MULTISHOT) {
+				io_kbuf_recycle(req, issue_flags);
+				return IOU_ISSUE_SKIP_COMPLETE;
+			}
+			return -EAGAIN;
+		}
 		if (ret > 0 && io_net_retry(sock, flags)) {
 			sr->len -= ret;
 			sr->buf += ret;
@@ -580,9 +642,13 @@ int io_send(struct io_kiocb *req, unsigned int issue_flags)
 		ret += sr->done_io;
 	else if (sr->done_io)
 		ret = sr->done_io;
-	cflags = io_put_kbuf(req, issue_flags);
-	io_req_set_res(req, ret, cflags);
-	return IOU_OK;
+	else
+		io_kbuf_recycle(req, issue_flags);
+
+	if (!io_send_finish(req, &ret, &msg, issue_flags))
+		goto retry_multishot;
+
+	return ret;
 }
 
 static int io_recvmsg_mshot_prep(struct io_kiocb *req,
