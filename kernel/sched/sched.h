@@ -1054,6 +1054,8 @@ struct rq {
 	 * modified under the rq lock (nr_iowait), and if we don't have the rq
 	 * lock, then nr_iowait_remote is used.
 	 */
+	unsigned int		nr_iowait_acct;
+	atomic_t		nr_iowait_acct_remote;
 	unsigned int		nr_iowait;
 	atomic_t		nr_iowait_remote;
 

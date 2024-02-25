@@ -19,8 +19,14 @@ DECLARE_PER_CPU(unsigned long, process_counts);
 extern int nr_processes(void);
 extern unsigned int nr_running(void);
 extern bool single_task_running(void);
-extern unsigned int nr_iowait(void);
-extern unsigned int nr_iowait_cpu(int cpu);
+extern unsigned int nr_iowait_acct(void);
+extern unsigned int nr_iowait_acct_cpu(int cpu);
+unsigned int nr_iowait_cpu(int cpu);
+
+enum {
+	TASK_IOWAIT		= 1,
+	TASK_IOWAIT_ACCT	= 2,
+};
 
 static inline int sched_info_on(void)
 {

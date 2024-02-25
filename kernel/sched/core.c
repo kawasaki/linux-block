@@ -3790,6 +3790,8 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
 	if (p->in_iowait) {
 		delayacct_blkio_end(p);
 		task_rq(p)->nr_iowait--;
+		if (p->in_iowait_acct)
+			task_rq(p)->nr_iowait_acct--;
 	}
 
 	activate_task(rq, p, en_flags);
@@ -4358,6 +4360,8 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 
 				delayacct_blkio_end(p);
 				atomic_inc(&__rq->nr_iowait_remote);
+				if (p->in_iowait_acct)
+					atomic_inc(&__rq->nr_iowait_acct_remote);
 			}
 
 			wake_flags |= WF_MIGRATED;
@@ -5463,11 +5467,11 @@ unsigned long long nr_context_switches(void)
  * it does become runnable.
  */
 
-unsigned int nr_iowait_cpu(int cpu)
+unsigned int nr_iowait_acct_cpu(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
 
-	return rq->nr_iowait - atomic_read(&rq->nr_iowait_remote);
+	return rq->nr_iowait_acct - atomic_read(&rq->nr_iowait_acct_remote);
 }
 
 /*
@@ -5500,14 +5504,21 @@ unsigned int nr_iowait_cpu(int cpu)
  * Task CPU affinities can make all that even more 'interesting'.
  */
 
-unsigned int nr_iowait(void)
+unsigned int nr_iowait_acct(void)
 {
 	unsigned int i, sum = 0;
 
 	for_each_possible_cpu(i)
-		sum += nr_iowait_cpu(i);
+		sum += nr_iowait_acct_cpu(i);
 
 	return sum;
+}
+
+unsigned int nr_iowait_cpu(int cpu)
+{
+	struct rq *rq = cpu_rq(cpu);
+
+	return rq->nr_iowait - atomic_read(&rq->nr_iowait_remote);
 }
 
 #ifdef CONFIG_SMP
@@ -6686,6 +6697,8 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 
 			if (prev->in_iowait) {
 				rq->nr_iowait++;
+				if (prev->in_iowait_acct)
+					rq->nr_iowait_acct++;
 				delayacct_blkio_start();
 			}
 		}
@@ -8988,18 +9001,32 @@ again:
 }
 EXPORT_SYMBOL_GPL(yield_to);
 
+/*
+ * Returns a token which is comprised of the two bits of iowait wait state -
+ * one is whether we're making ourselves as in iowait for cpufreq reasons,
+ * and the other is if the task should be accounted as such.
+ */
 int io_schedule_prepare(void)
 {
-	int old_iowait = current->in_iowait;
+	int old_wait_flags = 0;
+
+	if (current->in_iowait)
+		old_wait_flags |= TASK_IOWAIT;
+	if (current->in_iowait_acct)
+		old_wait_flags |= TASK_IOWAIT_ACCT;
 
 	current->in_iowait = 1;
+	current->in_iowait_acct = 1;
 	blk_flush_plug(current->plug, true);
-	return old_iowait;
+	return old_wait_flags;
 }
 
-void io_schedule_finish(int token)
+void io_schedule_finish(int old_wait_flags)
 {
-	current->in_iowait = token;
+	if (!(old_wait_flags & TASK_IOWAIT))
+		current->in_iowait = 0;
+	if (!(old_wait_flags & TASK_IOWAIT_ACCT))
+		current->in_iowait_acct = 0;
 }
 
 /*
@@ -10033,6 +10060,8 @@ void __init sched_init(void)
 #endif
 #endif /* CONFIG_SMP */
 		hrtick_rq_init(rq);
+		rq->nr_iowait_acct = 0;
+		atomic_set(&rq->nr_iowait_acct_remote, 0);
 		rq->nr_iowait = 0;
 		atomic_set(&rq->nr_iowait_remote, 0);
 
