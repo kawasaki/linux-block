@@ -1049,7 +1049,13 @@ struct rq {
 	u64			clock_idle_copy;
 #endif
 
-	atomic_t		nr_iowait;
+	/*
+	 * Total per-cpu iowait is the difference of the two below. One is
+	 * modified under the rq lock (nr_iowait), and if we don't have the rq
+	 * lock, then nr_iowait_remote is used.
+	 */
+	unsigned int		nr_iowait;
+	atomic_t		nr_iowait_remote;
 
 #ifdef CONFIG_SCHED_DEBUG
 	u64 last_seen_need_resched_ns;
