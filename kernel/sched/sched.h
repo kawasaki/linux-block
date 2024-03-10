@@ -1082,7 +1082,7 @@ struct rq {
 	u64			clock_idle_copy;
 #endif
 
-	atomic_t		nr_iowait;
+	atomic_long_t		nr_iowait;
 
 #ifdef CONFIG_SCHED_DEBUG
 	u64 last_seen_need_resched_ns;
