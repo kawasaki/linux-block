@@ -3723,17 +3723,29 @@ static inline cpumask_t *alloc_user_cpus_ptr(int node)
 
 static void task_iowait_inc(struct task_struct *p)
 {
+#ifdef CONFIG_64BIT
+	atomic_long_inc(&task_rq(p)->nr_iowait);
+#else
 	atomic_inc(&task_rq(p)->nr_iowait);
+#endif
 }
 
 static void task_iowait_dec(struct task_struct *p)
 {
+#ifdef CONFIG_64BIT
+	atomic_long_dec(&task_rq(p)->nr_iowait);
+#else
 	atomic_dec(&task_rq(p)->nr_iowait);
+#endif
 }
 
 int rq_iowait(struct rq *rq)
 {
+#ifdef CONFIG_64BIT
+	return atomic_long_read(&rq->nr_iowait);
+#else
 	return atomic_read(&rq->nr_iowait);
+#endif
 }
 
 static void
@@ -10065,7 +10077,7 @@ void __init sched_init(void)
 #endif
 #endif /* CONFIG_SMP */
 		hrtick_rq_init(rq);
-		atomic_set(&rq->nr_iowait, 0);
+		atomic_long_set(&rq->nr_iowait, 0);
 
 #ifdef CONFIG_SCHED_CORE
 		rq->core = rq;
