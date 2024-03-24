@@ -249,7 +249,7 @@ static __cold void io_fallback_req_func(struct work_struct *work)
 
 	percpu_ref_get(&ctx->refs);
 	mutex_lock(&ctx->uring_lock);
-	llist_for_each_entry_safe(req, tmp, node, io_task_work.node)
+	llist_for_each_entry_safe(req, tmp, node, io_task_work.llist_node)
 		req->io_task_work.func(req, &ts);
 	io_submit_flush_completions(ctx);
 	mutex_unlock(&ctx->uring_lock);
@@ -331,7 +331,8 @@ static __cold struct io_ring_ctx *io_ring_ctx_alloc(struct io_uring_params *p)
 	INIT_LIST_HEAD(&ctx->timeout_list);
 	INIT_LIST_HEAD(&ctx->ltimeout_list);
 	INIT_LIST_HEAD(&ctx->rsrc_ref_list);
-	init_llist_head(&ctx->work_llist);
+	INIT_WQ_LIST(&ctx->work_list);
+	spin_lock_init(&ctx->work_lock);
 	INIT_LIST_HEAD(&ctx->tctx_list);
 	ctx->submit_state.free_list.next = NULL;
 	INIT_WQ_LIST(&ctx->locked_free_list);
@@ -1131,7 +1132,7 @@ struct llist_node *io_handle_tw_list(struct llist_node *node,
 	do {
 		struct llist_node *next = node->next;
 		struct io_kiocb *req = container_of(node, struct io_kiocb,
-						    io_task_work.node);
+						    io_task_work.llist_node);
 
 		if (req->ctx != ctx) {
 			ctx_flush_and_put(ctx, &ts);
@@ -1155,20 +1156,6 @@ struct llist_node *io_handle_tw_list(struct llist_node *node,
 	return node;
 }
 
-/**
- * io_llist_xchg - swap all entries in a lock-less list
- * @head:	the head of lock-less list to delete all entries
- * @new:	new entry as the head of the list
- *
- * If list is empty, return NULL, otherwise, return the pointer to the first entry.
- * The order of entries returned is from the newest to the oldest added one.
- */
-static inline struct llist_node *io_llist_xchg(struct llist_head *head,
-					       struct llist_node *new)
-{
-	return xchg(&head->first, new);
-}
-
 static __cold void io_fallback_tw(struct io_uring_task *tctx, bool sync)
 {
 	struct llist_node *node = llist_del_all(&tctx->task_list);
@@ -1176,7 +1163,7 @@ static __cold void io_fallback_tw(struct io_uring_task *tctx, bool sync)
 	struct io_kiocb *req;
 
 	while (node) {
-		req = container_of(node, struct io_kiocb, io_task_work.node);
+		req = container_of(node, struct io_kiocb, io_task_work.llist_node);
 		node = node->next;
 		if (sync && last_ctx != req->ctx) {
 			if (last_ctx) {
@@ -1186,7 +1173,7 @@ static __cold void io_fallback_tw(struct io_uring_task *tctx, bool sync)
 			last_ctx = req->ctx;
 			percpu_ref_get(&last_ctx->refs);
 		}
-		if (llist_add(&req->io_task_work.node,
+		if (llist_add(&req->io_task_work.llist_node,
 			      &req->ctx->fallback_llist))
 			schedule_delayed_work(&req->ctx->fallback_work, 1);
 	}
@@ -1234,64 +1221,46 @@ void tctx_task_work(struct callback_head *cb)
 	WARN_ON_ONCE(ret);
 }
 
-static inline void io_req_local_work_add(struct io_kiocb *req, unsigned flags)
+static inline void io_req_local_work_add(struct io_kiocb *req, unsigned tw_flags)
 {
 	struct io_ring_ctx *ctx = req->ctx;
 	unsigned nr_wait, nr_tw, nr_tw_prev;
-	struct llist_node *head;
+	unsigned long flags;
 
 	/* See comment above IO_CQ_WAKE_INIT */
 	BUILD_BUG_ON(IO_CQ_WAKE_FORCE <= IORING_MAX_CQ_ENTRIES);
 
 	/*
-	 * We don't know how many reuqests is there in the link and whether
+	 * We don't know how many requests is there in the link and whether
 	 * they can even be queued lazily, fall back to non-lazy.
 	 */
 	if (req->flags & (REQ_F_LINK | REQ_F_HARDLINK))
-		flags &= ~IOU_F_TWQ_LAZY_WAKE;
+		tw_flags &= ~IOU_F_TWQ_LAZY_WAKE;
 
-	head = READ_ONCE(ctx->work_llist.first);
-	do {
-		nr_tw_prev = 0;
-		if (head) {
-			struct io_kiocb *first_req = container_of(head,
-							struct io_kiocb,
-							io_task_work.node);
-			/*
-			 * Might be executed at any moment, rely on
-			 * SLAB_TYPESAFE_BY_RCU to keep it alive.
-			 */
-			nr_tw_prev = READ_ONCE(first_req->nr_tw);
-		}
+	spin_lock_irqsave(&ctx->work_lock, flags);
+	wq_list_add_tail(&req->io_task_work.node, &ctx->work_list);
+	nr_tw_prev = ctx->work_items++;
+	spin_unlock_irqrestore(&ctx->work_lock, flags);
 
-		/*
-		 * Theoretically, it can overflow, but that's fine as one of
-		 * previous adds should've tried to wake the task.
-		 */
-		nr_tw = nr_tw_prev + 1;
-		if (!(flags & IOU_F_TWQ_LAZY_WAKE))
-			nr_tw = IO_CQ_WAKE_FORCE;
-
-		req->nr_tw = nr_tw;
-		req->io_task_work.node.next = head;
-	} while (!try_cmpxchg(&ctx->work_llist.first, &head,
-			      &req->io_task_work.node));
-
-	/*
-	 * cmpxchg implies a full barrier, which pairs with the barrier
-	 * in set_current_state() on the io_cqring_wait() side. It's used
-	 * to ensure that either we see updated ->cq_wait_nr, or waiters
-	 * going to sleep will observe the work added to the list, which
-	 * is similar to the wait/wawke task state sync.
-	 */
-
-	if (!head) {
+	if (!nr_tw_prev) {
 		if (ctx->flags & IORING_SETUP_TASKRUN_FLAG)
 			atomic_or(IORING_SQ_TASKRUN, &ctx->rings->sq_flags);
 		if (ctx->has_evfd)
 			io_eventfd_signal(ctx);
 	}
 
+	nr_tw = nr_tw_prev + 1;
+	if (!(tw_flags & IOU_F_TWQ_LAZY_WAKE))
+		nr_tw = IO_CQ_WAKE_FORCE;
+
+	/*
+	 * This smp_mb() pairs with the barrier in set_current_state() on the
+	 * io_cqring_wait() side. It's used to ensure that either we see
+	 * updated ->cq_wait_nr, or waiters going to sleep will observe the
+	 * work added to the list, which is similar to the wait/wake task state
+	 * sync.
+	 */
+	smp_mb();
 	nr_wait = atomic_read(&ctx->cq_wait_nr);
 	/* not enough or no one is waiting */
 	if (nr_tw < nr_wait)
@@ -1308,7 +1277,7 @@ static void io_req_normal_work_add(struct io_kiocb *req)
 	struct io_ring_ctx *ctx = req->ctx;
 
 	/* task_work already pending, we're done */
-	if (!llist_add(&req->io_task_work.node, &tctx->task_list))
+	if (!llist_add(&req->io_task_work.llist_node, &tctx->task_list))
 		return;
 
 	if (ctx->flags & IORING_SETUP_TASKRUN_FLAG)
@@ -1331,20 +1300,23 @@ static void io_req_normal_work_add(struct io_kiocb *req)
 
 void __io_req_task_work_add(struct io_kiocb *req, unsigned flags)
 {
-	if (req->ctx->flags & IORING_SETUP_DEFER_TASKRUN) {
-		rcu_read_lock();
+	if (req->ctx->flags & IORING_SETUP_DEFER_TASKRUN)
 		io_req_local_work_add(req, flags);
-		rcu_read_unlock();
-	} else {
+	else
 		io_req_normal_work_add(req);
-	}
 }
 
 static void __cold io_move_task_work_from_local(struct io_ring_ctx *ctx)
 {
-	struct llist_node *node;
+	struct io_wq_work_node *node;
+	unsigned long flags;
 
-	node = llist_del_all(&ctx->work_llist);
+	spin_lock_irqsave(&ctx->work_lock, flags);
+	node = ctx->work_list.first;
+	INIT_WQ_LIST(&ctx->work_list);
+	ctx->work_items = 0;
+	spin_unlock_irqrestore(&ctx->work_lock, flags);
+
 	while (node) {
 		struct io_kiocb *req = container_of(node, struct io_kiocb,
 						    io_task_work.node);
@@ -1357,7 +1329,7 @@ static void __cold io_move_task_work_from_local(struct io_ring_ctx *ctx)
 static bool io_run_local_work_continue(struct io_ring_ctx *ctx, int events,
 				       int min_events)
 {
-	if (llist_empty(&ctx->work_llist))
+	if (wq_list_empty(&ctx->work_list))
 		return false;
 	if (events < min_events)
 		return true;
@@ -1369,7 +1341,7 @@ static bool io_run_local_work_continue(struct io_ring_ctx *ctx, int events,
 static int __io_run_local_work(struct io_ring_ctx *ctx, struct io_tw_state *ts,
 			       int min_events)
 {
-	struct llist_node *node;
+	struct io_wq_work_node *node;
 	unsigned int loops = 0;
 	int ret = 0;
 
@@ -1378,13 +1350,14 @@ static int __io_run_local_work(struct io_ring_ctx *ctx, struct io_tw_state *ts,
 	if (ctx->flags & IORING_SETUP_TASKRUN_FLAG)
 		atomic_andnot(IORING_SQ_TASKRUN, &ctx->rings->sq_flags);
 again:
-	/*
-	 * llists are in reverse order, flip it back the right way before
-	 * running the pending items.
-	 */
-	node = llist_reverse_order(io_llist_xchg(&ctx->work_llist, NULL));
+	spin_lock_irq(&ctx->work_lock);
+	node = ctx->work_list.first;
+	INIT_WQ_LIST(&ctx->work_list);
+	ctx->work_items = 0;
+	spin_unlock_irq(&ctx->work_lock);
+
 	while (node) {
-		struct llist_node *next = node->next;
+		struct io_wq_work_node *next = node->next;
 		struct io_kiocb *req = container_of(node, struct io_kiocb,
 						    io_task_work.node);
 		INDIRECT_CALL_2(req->io_task_work.func,
@@ -1410,7 +1383,7 @@ static inline int io_run_local_work_locked(struct io_ring_ctx *ctx,
 {
 	struct io_tw_state ts = {};
 
-	if (llist_empty(&ctx->work_llist))
+	if (wq_list_empty(&ctx->work_list))
 		return 0;
 	return __io_run_local_work(ctx, &ts, min_events);
 }
@@ -2422,7 +2395,7 @@ static int io_wake_function(struct wait_queue_entry *curr, unsigned int mode,
 
 int io_run_task_work_sig(struct io_ring_ctx *ctx)
 {
-	if (!llist_empty(&ctx->work_llist)) {
+	if (!wq_list_empty(&ctx->work_list)) {
 		__set_current_state(TASK_RUNNING);
 		if (io_run_local_work(ctx, INT_MAX) > 0)
 			return 0;
@@ -2451,7 +2424,7 @@ static inline int io_cqring_wait_schedule(struct io_ring_ctx *ctx,
 
 	if (unlikely(READ_ONCE(ctx->check_cq)))
 		return 1;
-	if (unlikely(!llist_empty(&ctx->work_llist)))
+	if (unlikely(!wq_list_empty(&ctx->work_list)))
 		return 1;
 	if (unlikely(test_thread_flag(TIF_NOTIFY_SIGNAL)))
 		return 1;
@@ -2490,7 +2463,7 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events,
 
 	if (!io_allowed_run_tw(ctx))
 		return -EEXIST;
-	if (!llist_empty(&ctx->work_llist))
+	if (!wq_list_empty(&ctx->work_list))
 		io_run_local_work(ctx, min_events);
 	io_run_task_work();
 	io_cqring_overflow_flush(ctx);
@@ -2554,7 +2527,7 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events,
 		 * now rather than let the caller do another wait loop.
 		 */
 		io_run_task_work();
-		if (!llist_empty(&ctx->work_llist))
+		if (!wq_list_empty(&ctx->work_list))
 			io_run_local_work(ctx, nr_wait);
 
 		/*
@@ -3246,7 +3219,7 @@ __cold void io_uring_cancel_generic(bool cancel_all, struct io_sq_data *sqd)
 		io_run_task_work();
 		io_uring_drop_tctx_refs(current);
 		xa_for_each(&tctx->xa, index, node) {
-			if (!llist_empty(&node->ctx->work_llist)) {
+			if (!wq_list_empty(&node->ctx->work_list)) {
 				WARN_ON_ONCE(node->ctx->submitter_task &&
 					     node->ctx->submitter_task != current);
 				goto end_wait;
