@@ -95,7 +95,8 @@ struct io_uring_task {
 	struct percpu_counter		inflight;
 
 	struct { /* task_work */
-		struct llist_head	task_list;
+		struct io_wq_work_list	task_list;
+		spinlock_t		task_lock;
 		struct callback_head	task_work;
 	} ____cacheline_aligned_in_smp;
 };
@@ -565,10 +566,7 @@ enum {
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, struct io_tw_state *ts);
 
 struct io_task_work {
-	union {
-		struct io_wq_work_node		node;
-		struct llist_node		llist_node;
-	};
+	struct io_wq_work_node		node;
 	io_req_tw_func_t		func;
 };
 
