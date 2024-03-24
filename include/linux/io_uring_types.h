@@ -404,7 +404,7 @@ struct io_ring_ctx {
 	struct mm_struct		*mm_account;
 
 	/* ctx exit and cancelation */
-	struct llist_head		fallback_llist;
+	struct io_wq_work_list		fallback_list;
 	struct delayed_work		fallback_work;
 	struct work_struct		exit_work;
 	struct list_head		tctx_list;

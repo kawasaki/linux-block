@@ -243,14 +243,22 @@ static __cold void io_fallback_req_func(struct work_struct *work)
 {
 	struct io_ring_ctx *ctx = container_of(work, struct io_ring_ctx,
 						fallback_work.work);
-	struct llist_node *node = llist_del_all(&ctx->fallback_llist);
-	struct io_kiocb *req, *tmp;
+	struct io_wq_work_node *node;
 	struct io_tw_state ts = {};
+	struct io_kiocb *req;
+
+	spin_lock_irq(&ctx->work_lock);
+	node = ctx->fallback_list.first;
+	INIT_WQ_LIST(&ctx->fallback_list);
+	spin_unlock_irq(&ctx->work_lock);
 
 	percpu_ref_get(&ctx->refs);
 	mutex_lock(&ctx->uring_lock);
-	llist_for_each_entry_safe(req, tmp, node, io_task_work.llist_node)
+	while (node) {
+		req = container_of(node, struct io_kiocb, io_task_work.node);
+		node = node->next;
 		req->io_task_work.func(req, &ts);
+	}
 	io_submit_flush_completions(ctx);
 	mutex_unlock(&ctx->uring_lock);
 	percpu_ref_put(&ctx->refs);
@@ -1163,6 +1171,9 @@ static __cold void io_fallback_tw(struct io_uring_task *tctx, bool sync)
 	struct io_kiocb *req;
 
 	while (node) {
+		unsigned long flags;
+		bool do_wake;
+
 		req = container_of(node, struct io_kiocb, io_task_work.llist_node);
 		node = node->next;
 		if (sync && last_ctx != req->ctx) {
@@ -1173,8 +1184,11 @@ static __cold void io_fallback_tw(struct io_uring_task *tctx, bool sync)
 			last_ctx = req->ctx;
 			percpu_ref_get(&last_ctx->refs);
 		}
-		if (llist_add(&req->io_task_work.llist_node,
-			      &req->ctx->fallback_llist))
+		spin_lock_irqsave(&req->ctx->work_lock, flags);
+		do_wake = wq_list_empty(&req->ctx->fallback_list);
+		wq_list_add_tail(&req->io_task_work.node, &req->ctx->fallback_list);
+		spin_unlock_irqrestore(&req->ctx->work_lock, flags);
+		if (do_wake)
 			schedule_delayed_work(&req->ctx->fallback_work, 1);
 	}
 
