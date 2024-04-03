@@ -345,10 +345,10 @@ static void reset_ip_core(struct axis_fifo *fifo)
  * Returns the number of bytes read from the device or negative error code
  *	on failure.
  */
-static ssize_t axis_fifo_read(struct file *f, char __user *buf,
-			      size_t len, loff_t *off)
+static ssize_t axis_fifo_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct axis_fifo *fifo = (struct axis_fifo *)f->private_data;
+	struct axis_fifo *fifo = iocb->ki_filp->private_data;
+	size_t len = iov_iter_count(to);
 	size_t bytes_available;
 	unsigned int words_available;
 	unsigned int copied;
@@ -431,8 +431,7 @@ static ssize_t axis_fifo_read(struct file *f, char __user *buf,
 					      XLLF_RDFD_OFFSET);
 		}
 
-		if (copy_to_user(buf + copied * sizeof(u32), tmp_buf,
-				 copy * sizeof(u32))) {
+		if (!copy_to_iter_full(tmp_buf, copy * sizeof(u32), to)) {
 			reset_ip_core(fifo);
 			ret = -EFAULT;
 			goto end_unlock;
@@ -465,10 +464,10 @@ end_unlock:
  * Returns the number of bytes written to the device or negative error code
  *	on failure.
  */
-static ssize_t axis_fifo_write(struct file *f, const char __user *buf,
-			       size_t len, loff_t *off)
+static ssize_t axis_fifo_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct axis_fifo *fifo = (struct axis_fifo *)f->private_data;
+	struct axis_fifo *fifo = iocb->ki_filp->private_data;
+	size_t len = iov_iter_count(from);
 	unsigned int words_to_write;
 	unsigned int copied;
 	unsigned int copy;
@@ -540,8 +539,7 @@ static ssize_t axis_fifo_write(struct file *f, const char __user *buf,
 	while (words_to_write > 0) {
 		copy = min(words_to_write, WRITE_BUF_SIZE);
 
-		if (copy_from_user(tmp_buf, buf + copied * sizeof(u32),
-				   copy * sizeof(u32))) {
+		if (!copy_from_iter_full(tmp_buf, copy * sizeof(u32), from)) {
 			reset_ip_core(fifo);
 			ret = -EFAULT;
 			goto end_unlock;
@@ -712,8 +710,8 @@ static const struct file_operations fops = {
 	.owner = THIS_MODULE,
 	.open = axis_fifo_open,
 	.release = axis_fifo_close,
-	.read = axis_fifo_read,
-	.write = axis_fifo_write
+	.read_iter = axis_fifo_read,
+	.write_iter = axis_fifo_write,
 };
 
 /* read named property from the device tree */
