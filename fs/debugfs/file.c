@@ -26,21 +26,19 @@
 
 struct poll_table_struct;
 
-static ssize_t default_read_file(struct file *file, char __user *buf,
-				 size_t count, loff_t *ppos)
+static ssize_t default_read_file_iter(struct kiocb *iocb, struct iov_iter *to)
 {
 	return 0;
 }
 
-static ssize_t default_write_file(struct file *file, const char __user *buf,
-				   size_t count, loff_t *ppos)
+static ssize_t default_write_file_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	return count;
+	return iov_iter_count(from);
 }
 
 const struct file_operations debugfs_noop_file_operations = {
-	.read =		default_read_file,
-	.write =	default_write_file,
+	.read_iter =	default_read_file_iter,
+	.write_iter =	default_write_file_iter,
 	.open =		simple_open,
 	.llseek =	noop_llseek,
 };
@@ -872,8 +870,9 @@ void debugfs_create_atomic_t(const char *name, umode_t mode,
 }
 EXPORT_SYMBOL_GPL(debugfs_create_atomic_t);
 
-ssize_t debugfs_read_file_bool(struct file *file, char __user *user_buf,
-			       size_t count, loff_t *ppos)
+static ssize_t __debugfs_read_file_bool(struct file *file,
+					char __user *user_buf, size_t count,
+					loff_t *ppos)
 {
 	char buf[2];
 	bool val;
@@ -893,10 +892,16 @@ ssize_t debugfs_read_file_bool(struct file *file, char __user *user_buf,
 	buf[1] = '\n';
 	return simple_read_from_buffer(user_buf, count, ppos, buf, 2);
 }
+
+ssize_t debugfs_read_file_bool(struct kiocb *iocb, struct iov_iter *to)
+{
+	return vfs_read_iter(iocb, to, __debugfs_read_file_bool);
+}
 EXPORT_SYMBOL_GPL(debugfs_read_file_bool);
 
-ssize_t debugfs_write_file_bool(struct file *file, const char __user *user_buf,
-				size_t count, loff_t *ppos)
+static ssize_t __debugfs_write_file_bool(struct file *file,
+					 const char __user *user_buf,
+					 size_t count, loff_t *ppos)
 {
 	bool bv;
 	int r;
@@ -914,23 +919,28 @@ ssize_t debugfs_write_file_bool(struct file *file, const char __user *user_buf,
 
 	return count;
 }
+
+ssize_t debugfs_write_file_bool(struct kiocb *iocb, struct iov_iter *from)
+{
+	return vfs_write_iter(iocb, from, __debugfs_write_file_bool);
+}
 EXPORT_SYMBOL_GPL(debugfs_write_file_bool);
 
 static const struct file_operations fops_bool = {
-	.read =		debugfs_read_file_bool,
-	.write =	debugfs_write_file_bool,
+	.read_iter =	debugfs_read_file_bool,
+	.write_iter =	debugfs_write_file_bool,
 	.open =		simple_open,
 	.llseek =	default_llseek,
 };
 
 static const struct file_operations fops_bool_ro = {
-	.read =		debugfs_read_file_bool,
+	.read_iter =	debugfs_read_file_bool,
 	.open =		simple_open,
 	.llseek =	default_llseek,
 };
 
 static const struct file_operations fops_bool_wo = {
-	.write =	debugfs_write_file_bool,
+	.write_iter =	debugfs_write_file_bool,
 	.open =		simple_open,
 	.llseek =	default_llseek,
 };
@@ -957,8 +967,8 @@ void debugfs_create_bool(const char *name, umode_t mode, struct dentry *parent,
 }
 EXPORT_SYMBOL_GPL(debugfs_create_bool);
 
-ssize_t debugfs_read_file_str(struct file *file, char __user *user_buf,
-			      size_t count, loff_t *ppos)
+static ssize_t __debugfs_read_file_str(struct file *file, char __user *user_buf,
+				       size_t count, loff_t *ppos)
 {
 	struct dentry *dentry = F_DENTRY(file);
 	char *str, *copy = NULL;
@@ -991,10 +1001,15 @@ ssize_t debugfs_read_file_str(struct file *file, char __user *user_buf,
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(debugfs_create_str);
 
-static ssize_t debugfs_write_file_str(struct file *file, const char __user *user_buf,
-				      size_t count, loff_t *ppos)
+ssize_t debugfs_read_file_str(struct kiocb *iocb, struct iov_iter *to)
+{
+	return vfs_read_iter(iocb, to, __debugfs_read_file_str);
+}
+
+static ssize_t __debugfs_write_file_str(struct file *file,
+					const char __user *user_buf,
+					size_t count, loff_t *ppos)
 {
 	struct dentry *dentry = F_DENTRY(file);
 	char *old, *new = NULL;
@@ -1044,21 +1059,26 @@ error:
 	return r;
 }
 
+static ssize_t debugfs_write_file_str(struct kiocb *iocb, struct iov_iter *from)
+{
+	return vfs_write_iter(iocb, from, __debugfs_write_file_str);
+}
+
 static const struct file_operations fops_str = {
-	.read =		debugfs_read_file_str,
-	.write =	debugfs_write_file_str,
+	.read_iter =	debugfs_read_file_str,
+	.write_iter =	debugfs_write_file_str,
 	.open =		simple_open,
 	.llseek =	default_llseek,
 };
 
 static const struct file_operations fops_str_ro = {
-	.read =		debugfs_read_file_str,
+	.read_iter =	debugfs_read_file_str,
 	.open =		simple_open,
 	.llseek =	default_llseek,
 };
 
 static const struct file_operations fops_str_wo = {
-	.write =	debugfs_write_file_str,
+	.write_iter =	debugfs_write_file_str,
 	.open =		simple_open,
 	.llseek =	default_llseek,
 };
@@ -1083,9 +1103,10 @@ void debugfs_create_str(const char *name, umode_t mode,
 	debugfs_create_mode_unsafe(name, mode, parent, value, &fops_str,
 				   &fops_str_ro, &fops_str_wo);
 }
+EXPORT_SYMBOL_GPL(debugfs_create_str);
 
-static ssize_t read_file_blob(struct file *file, char __user *user_buf,
-			      size_t count, loff_t *ppos)
+static ssize_t __read_file_blob(struct file *file, char __user *user_buf,
+				size_t count, loff_t *ppos)
 {
 	struct debugfs_blob_wrapper *blob = file->private_data;
 	struct dentry *dentry = F_DENTRY(file);
@@ -1100,8 +1121,13 @@ static ssize_t read_file_blob(struct file *file, char __user *user_buf,
 	return r;
 }
 
-static ssize_t write_file_blob(struct file *file, const char __user *user_buf,
-			       size_t count, loff_t *ppos)
+static ssize_t read_file_blob(struct kiocb *iocb, struct iov_iter *to)
+{
+	return vfs_read_iter(iocb, to, __read_file_blob);
+}
+
+static ssize_t __write_file_blob(struct file *file, const char __user *user_buf,
+				 size_t count, loff_t *ppos)
 {
 	struct debugfs_blob_wrapper *blob = file->private_data;
 	struct dentry *dentry = F_DENTRY(file);
@@ -1117,9 +1143,14 @@ static ssize_t write_file_blob(struct file *file, const char __user *user_buf,
 	return r;
 }
 
+static ssize_t write_file_blob(struct kiocb *iocb, struct iov_iter *from)
+{
+	return vfs_write_iter(iocb, from, __write_file_blob);
+}
+
 static const struct file_operations fops_blob = {
-	.read =		read_file_blob,
-	.write =	write_file_blob,
+	.read_iter =	read_file_blob,
+	.write_iter =	write_file_blob,
 	.open =		simple_open,
 	.llseek =	default_llseek,
 };
@@ -1197,13 +1228,18 @@ static int u32_array_open(struct inode *inode, struct file *file)
 	return nonseekable_open(inode, file);
 }
 
-static ssize_t u32_array_read(struct file *file, char __user *buf, size_t len,
-			      loff_t *ppos)
+static ssize_t __u32_array_read(struct file *file, char __user *buf, size_t len,
+				loff_t *ppos)
 {
 	size_t size = strlen(file->private_data);
 
 	return simple_read_from_buffer(buf, len, ppos,
 					file->private_data, size);
+}
+
+static ssize_t u32_array_read(struct kiocb *iocb, struct iov_iter *to)
+{
+	return vfs_read_iter(iocb, to, __u32_array_read);
 }
 
 static int u32_array_release(struct inode *inode, struct file *file)
@@ -1217,7 +1253,7 @@ static const struct file_operations u32_array_fops = {
 	.owner	 = THIS_MODULE,
 	.open	 = u32_array_open,
 	.release = u32_array_release,
-	.read	 = u32_array_read,
+	.read_iter = u32_array_read,
 };
 
 /**
@@ -1340,7 +1376,7 @@ static const struct file_operations debugfs_devm_entry_ops = {
 	.owner = THIS_MODULE,
 	.open = debugfs_devm_entry_open,
 	.release = single_release,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek
 };
 

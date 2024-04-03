@@ -161,14 +161,11 @@ void debugfs_create_devm_seqfile(struct device *dev, const char *name,
 
 bool debugfs_initialized(void);
 
-ssize_t debugfs_read_file_bool(struct file *file, char __user *user_buf,
-			       size_t count, loff_t *ppos);
+ssize_t debugfs_read_file_bool(struct kiocb *iocb, struct iov_iter *to);
 
-ssize_t debugfs_write_file_bool(struct file *file, const char __user *user_buf,
-				size_t count, loff_t *ppos);
+ssize_t debugfs_write_file_bool(struct kiocb *iocb, struct iov_iter *from);
 
-ssize_t debugfs_read_file_str(struct file *file, char __user *user_buf,
-			      size_t count, loff_t *ppos);
+ssize_t debugfs_read_file_str(struct kiocb *iocb, struct iov_iter *to);
 
 /**
  * struct debugfs_cancellation - cancellation data
@@ -375,23 +372,20 @@ static inline void debugfs_create_devm_seqfile(struct device *dev,
 {
 }
 
-static inline ssize_t debugfs_read_file_bool(struct file *file,
-					     char __user *user_buf,
-					     size_t count, loff_t *ppos)
+static inline ssize_t debugfs_read_file_bool(struct kiocb *iocb,
+					     struct iov_iter *to)
 {
 	return -ENODEV;
 }
 
-static inline ssize_t debugfs_write_file_bool(struct file *file,
-					      const char __user *user_buf,
-					      size_t count, loff_t *ppos)
+static inline ssize_t debugfs_write_file_bool(struct kiocb *iocb,
+					      struct iov_iter *from)
 {
 	return -ENODEV;
 }
 
-static inline ssize_t debugfs_read_file_str(struct file *file,
-					    char __user *user_buf,
-					    size_t count, loff_t *ppos)
+static inline ssize_t debugfs_read_file_str(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
 	return -ENODEV;
 }
