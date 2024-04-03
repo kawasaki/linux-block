@@ -1355,7 +1355,7 @@ static const struct inode_operations bch_dir_inode_operations = {
 
 static const struct file_operations bch_dir_file_operations = {
 	.llseek		= bch2_dir_llseek,
-	.read		= generic_read_dir,
+	.read_iter	= generic_read_dir,
 	.iterate_shared	= bch2_vfs_readdir,
 	.fsync		= bch2_fsync,
 	.unlocked_ioctl = bch2_fs_file_ioctl,

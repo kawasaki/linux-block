@@ -19,7 +19,7 @@ static int reiserfs_dir_fsync(struct file *filp, loff_t start, loff_t end,
 
 const struct file_operations reiserfs_dir_operations = {
 	.llseek = generic_file_llseek,
-	.read = generic_read_dir,
+	.read_iter = generic_read_dir,
 	.iterate_shared = reiserfs_readdir,
 	.fsync = reiserfs_dir_fsync,
 	.unlocked_ioctl = reiserfs_ioctl,
