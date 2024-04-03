@@ -198,7 +198,7 @@ static int __name ## _open(struct inode *inode, struct file *file)	\
 static const struct file_operations __name ## _fops = {			\
 	.owner		= THIS_MODULE,					\
 	.open		= __name ## _open,				\
-	.read		= seq_read,					\
+	.read_iter	= seq_read_iter,				\
 	.llseek		= seq_lseek,					\
 	.release	= seq_release,					\
 }
@@ -212,7 +212,7 @@ static int __name ## _open(struct inode *inode, struct file *file)	\
 static const struct file_operations __name ## _fops = {			\
 	.owner		= THIS_MODULE,					\
 	.open		= __name ## _open,				\
-	.read		= seq_read,					\
+	.read_iter	= seq_read_iter,				\
 	.llseek		= seq_lseek,					\
 	.release	= single_release,				\
 }
@@ -226,8 +226,8 @@ static int __name ## _open(struct inode *inode, struct file *file)	\
 static const struct file_operations __name ## _fops = {			\
 	.owner		= THIS_MODULE,					\
 	.open		= __name ## _open,				\
-	.read		= seq_read,					\
-	.write		= __name ## _write,				\
+	.read_iter	= seq_read_iter,				\
+	.write_iter	= __name ## _write_iter,			\
 	.llseek		= seq_lseek,					\
 	.release	= single_release,				\
 }
