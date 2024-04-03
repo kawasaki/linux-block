@@ -468,6 +468,20 @@ ssize_t debugfs_attr_read(struct file *file, char __user *buf,
 }
 EXPORT_SYMBOL_GPL(debugfs_attr_read);
 
+ssize_t debugfs_attr_read_iter(struct kiocb *iocb, struct iov_iter *to)
+{
+	struct dentry *dentry = F_DENTRY(iocb->ki_filp);
+	ssize_t ret;
+
+	ret = debugfs_file_get(dentry);
+	if (unlikely(ret))
+		return ret;
+	ret = simple_attr_read_iter(iocb, to);
+	debugfs_file_put(dentry);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(debugfs_attr_read_iter);
+
 static ssize_t debugfs_attr_write_xsigned(struct file *file, const char __user *buf,
 			 size_t len, loff_t *ppos, bool is_signed)
 {
@@ -498,6 +512,36 @@ ssize_t debugfs_attr_write_signed(struct file *file, const char __user *buf,
 	return debugfs_attr_write_xsigned(file, buf, len, ppos, true);
 }
 EXPORT_SYMBOL_GPL(debugfs_attr_write_signed);
+
+static ssize_t debugfs_attr_write_iter_xsigned(struct kiocb *iocb,
+					       struct iov_iter *from,
+					       bool is_signed)
+{
+	struct dentry *dentry = F_DENTRY(iocb->ki_filp);
+	ssize_t ret;
+
+	ret = debugfs_file_get(dentry);
+	if (unlikely(ret))
+		return ret;
+	if (is_signed)
+		ret = simple_attr_write_iter_signed(iocb, from);
+	else
+		ret = simple_attr_write_iter(iocb, from);
+	debugfs_file_put(dentry);
+	return ret;
+}
+
+ssize_t debugfs_attr_write_iter(struct kiocb *iocb, struct iov_iter *from)
+{
+	return debugfs_attr_write_iter_xsigned(iocb, from, false);
+}
+EXPORT_SYMBOL_GPL(debugfs_attr_write_iter);
+
+ssize_t debugfs_attr_write_iter_signed(struct kiocb *iocb, struct iov_iter *from)
+{
+	return debugfs_attr_write_iter_xsigned(iocb, from, true);
+}
+EXPORT_SYMBOL_GPL(debugfs_attr_write_iter_signed);
 
 static struct dentry *debugfs_create_mode_unsafe(const char *name, umode_t mode,
 					struct dentry *parent, void *value,

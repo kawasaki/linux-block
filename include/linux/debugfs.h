@@ -55,8 +55,8 @@ static const struct file_operations __fops = {				\
 	.owner	 = THIS_MODULE,						\
 	.open	 = __fops ## _open,					\
 	.release = simple_attr_release,					\
-	.read	 = debugfs_attr_read,					\
-	.write	 = (__is_signed) ? debugfs_attr_write_signed : debugfs_attr_write,	\
+	.read_iter = debugfs_attr_read_iter,				\
+	.write_iter= (__is_signed) ? debugfs_attr_write_iter_signed : debugfs_attr_write_iter,	\
 }
 
 #define DEFINE_DEBUGFS_ATTRIBUTE(__fops, __get, __set, __fmt)		\
@@ -105,10 +105,13 @@ void debugfs_file_put(struct dentry *dentry);
 
 ssize_t debugfs_attr_read(struct file *file, char __user *buf,
 			size_t len, loff_t *ppos);
+ssize_t debugfs_attr_read_iter(struct kiocb *iocb, struct iov_iter *to);
 ssize_t debugfs_attr_write(struct file *file, const char __user *buf,
 			size_t len, loff_t *ppos);
+ssize_t debugfs_attr_write_iter(struct kiocb *iocb, struct iov_iter *from);
 ssize_t debugfs_attr_write_signed(struct file *file, const char __user *buf,
 			size_t len, loff_t *ppos);
+ssize_t debugfs_attr_write_iter_signed(struct kiocb *iocb, struct iov_iter *from);
 
 struct dentry *debugfs_rename(struct dentry *old_dir, struct dentry *old_dentry,
                 struct dentry *new_dir, const char *new_name);
@@ -270,6 +273,12 @@ static inline ssize_t debugfs_attr_read(struct file *file, char __user *buf,
 	return -ENODEV;
 }
 
+static inline ssize_t debugfs_attr_read_iter(struct kiocb *iocb,
+					     struct iov_iter *to)
+{
+	return -ENODEV;
+}
+
 static inline ssize_t debugfs_attr_write(struct file *file,
 					const char __user *buf,
 					size_t len, loff_t *ppos)
@@ -277,9 +286,21 @@ static inline ssize_t debugfs_attr_write(struct file *file,
 	return -ENODEV;
 }
 
+static inline ssize_t debugfs_attr_write_iter(struct kiocb *iocb,
+					      struct iov_iter *from)
+{
+	return -ENODEV;
+}
+
 static inline ssize_t debugfs_attr_write_signed(struct file *file,
 					const char __user *buf,
 					size_t len, loff_t *ppos)
+{
+	return -ENODEV;
+}
+
+static inline ssize_t debugfs_attr_write_iter_signed(struct kiocb *iocb,
+						     struct iov_iter *from)
 {
 	return -ENODEV;
 }
