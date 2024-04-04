@@ -380,7 +380,7 @@ int skb_kill_datagram(struct sock *sk, struct sk_buff *skb, unsigned int flags)
 }
 EXPORT_SYMBOL(skb_kill_datagram);
 
-INDIRECT_CALLABLE_DECLARE(static size_t simple_copy_to_iter(const void *addr,
+INDIRECT_CALLABLE_DECLARE(static size_t __simple_copy_to_iter(const void *addr,
 						size_t bytes,
 						void *data __always_unused,
 						struct iov_iter *i));
@@ -398,7 +398,7 @@ static int __skb_datagram_iter(const struct sk_buff *skb, int offset,
 	if (copy > 0) {
 		if (copy > len)
 			copy = len;
-		n = INDIRECT_CALL_1(cb, simple_copy_to_iter,
+		n = INDIRECT_CALL_1(cb, __simple_copy_to_iter,
 				    skb->data + offset, copy, data, to);
 		offset += n;
 		if (n != copy)
@@ -431,7 +431,7 @@ static int __skb_datagram_iter(const struct sk_buff *skb, int offset,
 					      skb_frag_off(frag) + offset - start,
 					      copy, p, p_off, p_len, copied) {
 				vaddr = kmap_local_page(p);
-				n += INDIRECT_CALL_1(cb, simple_copy_to_iter,
+				n += INDIRECT_CALL_1(cb, __simple_copy_to_iter,
 					vaddr + p_off, p_len, data, to);
 				kunmap_local(vaddr);
 			}
@@ -518,7 +518,7 @@ int skb_copy_and_hash_datagram_iter(const struct sk_buff *skb, int offset,
 }
 EXPORT_SYMBOL(skb_copy_and_hash_datagram_iter);
 
-static size_t simple_copy_to_iter(const void *addr, size_t bytes,
+static size_t __simple_copy_to_iter(const void *addr, size_t bytes,
 		void *data __always_unused, struct iov_iter *i)
 {
 	return copy_to_iter(addr, bytes, i);
@@ -536,7 +536,7 @@ int skb_copy_datagram_iter(const struct sk_buff *skb, int offset,
 {
 	trace_skb_copy_datagram_iovec(skb, len);
 	return __skb_datagram_iter(skb, offset, to, len, false,
-			simple_copy_to_iter, NULL);
+			__simple_copy_to_iter, NULL);
 }
 EXPORT_SYMBOL(skb_copy_datagram_iter);
 
