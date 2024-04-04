@@ -101,11 +101,11 @@ static int shrinker_debugfs_scan_open(struct inode *inode, struct file *file)
 	return nonseekable_open(inode, file);
 }
 
-static ssize_t shrinker_debugfs_scan_write(struct file *file,
-					   const char __user *buf,
-					   size_t size, loff_t *pos)
+static ssize_t shrinker_debugfs_scan_write(struct kiocb *iocb,
+					   struct iov_iter *from)
 {
-	struct shrinker *shrinker = file->private_data;
+	struct shrinker *shrinker = iocb->ki_filp->private_data;
+	size_t size = iov_iter_count(from);
 	unsigned long nr_to_scan = 0, ino, read_len;
 	struct shrink_control sc = {
 		.gfp_mask = GFP_KERNEL,
@@ -115,7 +115,7 @@ static ssize_t shrinker_debugfs_scan_write(struct file *file,
 	char kbuf[72];
 
 	read_len = min(size, sizeof(kbuf) - 1);
-	if (copy_from_user(kbuf, buf, read_len))
+	if (!copy_from_iter_full(kbuf, read_len, from))
 		return -EFAULT;
 	kbuf[read_len] = '\0';
 
@@ -156,7 +156,7 @@ static ssize_t shrinker_debugfs_scan_write(struct file *file,
 static const struct file_operations shrinker_debugfs_scan_fops = {
 	.owner	 = THIS_MODULE,
 	.open	 = shrinker_debugfs_scan_open,
-	.write	 = shrinker_debugfs_scan_write,
+	.write_iter	 = shrinker_debugfs_scan_write,
 };
 
 int shrinker_debugfs_add(struct shrinker *shrinker)

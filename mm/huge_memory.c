@@ -4040,8 +4040,7 @@ out:
 
 #define MAX_INPUT_BUF_SZ 255
 
-static ssize_t split_huge_pages_write(struct file *file, const char __user *buf,
-				size_t count, loff_t *ppops)
+static ssize_t split_huge_pages_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	static DEFINE_MUTEX(split_debug_mutex);
 	ssize_t ret;
@@ -4052,6 +4051,7 @@ static ssize_t split_huge_pages_write(struct file *file, const char __user *buf,
 	char input_buf[MAX_INPUT_BUF_SZ];
 	int pid;
 	unsigned long vaddr_start, vaddr_end;
+	size_t count = iov_iter_count(from);
 	unsigned int new_order = 0;
 
 	ret = mutex_lock_interruptible(&split_debug_mutex);
@@ -4061,7 +4061,8 @@ static ssize_t split_huge_pages_write(struct file *file, const char __user *buf,
 	ret = -EFAULT;
 
 	memset(input_buf, 0, MAX_INPUT_BUF_SZ);
-	if (copy_from_user(input_buf, buf, min_t(size_t, count, MAX_INPUT_BUF_SZ)))
+	if (!copy_from_iter_full(input_buf,
+				 min_t(size_t, count, MAX_INPUT_BUF_SZ), from))
 		goto out;
 
 	input_buf[MAX_INPUT_BUF_SZ - 1] = '\0';
@@ -4109,12 +4110,11 @@ static ssize_t split_huge_pages_write(struct file *file, const char __user *buf,
 out:
 	mutex_unlock(&split_debug_mutex);
 	return ret;
-
 }
 
 static const struct file_operations split_huge_pages_fops = {
 	.owner	 = THIS_MODULE,
-	.write	 = split_huge_pages_write,
+	.write_iter = split_huge_pages_write,
 };
 
 static int __init split_huge_pages_debugfs(void)

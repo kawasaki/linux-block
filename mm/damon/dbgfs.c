@@ -56,10 +56,9 @@ static char *user_input_str(const char __user *buf, size_t count, loff_t *ppos)
 	return kbuf;
 }
 
-static ssize_t dbgfs_attrs_read(struct file *file,
-		char __user *buf, size_t count, loff_t *ppos)
+static ssize_t dbgfs_attrs_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct damon_ctx *ctx = file->private_data;
+	struct damon_ctx *ctx = iocb->ki_filp->private_data;
 	char kbuf[128];
 	int ret;
 
@@ -70,7 +69,7 @@ static ssize_t dbgfs_attrs_read(struct file *file,
 			ctx->attrs.min_nr_regions, ctx->attrs.max_nr_regions);
 	mutex_unlock(&ctx->kdamond_lock);
 
-	return simple_read_from_buffer(buf, count, ppos, kbuf, ret);
+	return simple_copy_to_iter(kbuf, &iocb->ki_pos, ret, to);
 }
 
 static ssize_t dbgfs_attrs_write(struct file *file,
@@ -109,6 +108,7 @@ out:
 	kfree(kbuf);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(dbgfs_attrs_write);
 
 /*
  * Return corresponding dbgfs' scheme action value (int) for the given
@@ -169,10 +169,10 @@ static ssize_t sprint_schemes(struct damon_ctx *c, char *buf, ssize_t len)
 	return written;
 }
 
-static ssize_t dbgfs_schemes_read(struct file *file, char __user *buf,
-		size_t count, loff_t *ppos)
+static ssize_t dbgfs_schemes_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct damon_ctx *ctx = file->private_data;
+	struct damon_ctx *ctx = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	char *kbuf;
 	ssize_t len;
 
@@ -185,7 +185,7 @@ static ssize_t dbgfs_schemes_read(struct file *file, char __user *buf,
 	mutex_unlock(&ctx->kdamond_lock);
 	if (len < 0)
 		goto out;
-	len = simple_read_from_buffer(buf, count, ppos, kbuf, len);
+	len = simple_copy_to_iter(kbuf, &iocb->ki_pos, len, to);
 
 out:
 	kfree(kbuf);
@@ -329,6 +329,7 @@ out:
 	kfree(kbuf);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(dbgfs_schemes_write);
 
 static ssize_t sprint_target_ids(struct damon_ctx *ctx, char *buf, ssize_t len)
 {
@@ -356,10 +357,9 @@ static ssize_t sprint_target_ids(struct damon_ctx *ctx, char *buf, ssize_t len)
 	return written;
 }
 
-static ssize_t dbgfs_target_ids_read(struct file *file,
-		char __user *buf, size_t count, loff_t *ppos)
+static ssize_t dbgfs_target_ids_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct damon_ctx *ctx = file->private_data;
+	struct damon_ctx *ctx = iocb->ki_filp->private_data;
 	ssize_t len;
 	char ids_buf[320];
 
@@ -369,7 +369,7 @@ static ssize_t dbgfs_target_ids_read(struct file *file,
 	if (len < 0)
 		return len;
 
-	return simple_read_from_buffer(buf, count, ppos, ids_buf, len);
+	return simple_copy_to_iter(ids_buf, &iocb->ki_pos, len, to);
 }
 
 /*
@@ -548,6 +548,7 @@ out:
 	kfree(kbuf);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(dbgfs_target_ids_write);
 
 static ssize_t sprint_init_regions(struct damon_ctx *c, char *buf, ssize_t len)
 {
@@ -571,10 +572,10 @@ static ssize_t sprint_init_regions(struct damon_ctx *c, char *buf, ssize_t len)
 	return written;
 }
 
-static ssize_t dbgfs_init_regions_read(struct file *file, char __user *buf,
-		size_t count, loff_t *ppos)
+static ssize_t dbgfs_init_regions_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct damon_ctx *ctx = file->private_data;
+	struct damon_ctx *ctx = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	char *kbuf;
 	ssize_t len;
 
@@ -593,7 +594,7 @@ static ssize_t dbgfs_init_regions_read(struct file *file, char __user *buf,
 	mutex_unlock(&ctx->kdamond_lock);
 	if (len < 0)
 		goto out;
-	len = simple_read_from_buffer(buf, count, ppos, kbuf, len);
+	len = simple_copy_to_iter(kbuf, &iocb->ki_pos, len, to);
 
 out:
 	kfree(kbuf);
@@ -693,11 +694,12 @@ unlock_out:
 	kfree(kbuf);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(dbgfs_init_regions_write);
 
-static ssize_t dbgfs_kdamond_pid_read(struct file *file,
-		char __user *buf, size_t count, loff_t *ppos)
+static ssize_t dbgfs_kdamond_pid_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct damon_ctx *ctx = file->private_data;
+	struct damon_ctx *ctx = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	char *kbuf;
 	ssize_t len;
 
@@ -713,7 +715,7 @@ static ssize_t dbgfs_kdamond_pid_read(struct file *file,
 	mutex_unlock(&ctx->kdamond_lock);
 	if (!len)
 		goto out;
-	len = simple_read_from_buffer(buf, count, ppos, kbuf, len);
+	len = simple_copy_to_iter(kbuf, &iocb->ki_pos, len, to);
 
 out:
 	kfree(kbuf);
@@ -731,31 +733,31 @@ static int damon_dbgfs_open(struct inode *inode, struct file *file)
 
 static const struct file_operations attrs_fops = {
 	.open = damon_dbgfs_open,
-	.read = dbgfs_attrs_read,
-	.write = dbgfs_attrs_write,
+	.read_iter = dbgfs_attrs_read,
+	.write_iter = dbgfs_attrs_write_iter,
 };
 
 static const struct file_operations schemes_fops = {
 	.open = damon_dbgfs_open,
-	.read = dbgfs_schemes_read,
-	.write = dbgfs_schemes_write,
+	.read_iter = dbgfs_schemes_read,
+	.write_iter = dbgfs_schemes_write_iter,
 };
 
 static const struct file_operations target_ids_fops = {
 	.open = damon_dbgfs_open,
-	.read = dbgfs_target_ids_read,
-	.write = dbgfs_target_ids_write,
+	.read_iter = dbgfs_target_ids_read,
+	.write_iter = dbgfs_target_ids_write_iter,
 };
 
 static const struct file_operations init_regions_fops = {
 	.open = damon_dbgfs_open,
-	.read = dbgfs_init_regions_read,
-	.write = dbgfs_init_regions_write,
+	.read_iter = dbgfs_init_regions_read,
+	.write_iter = dbgfs_init_regions_write_iter,
 };
 
 static const struct file_operations kdamond_pid_fops = {
 	.open = damon_dbgfs_open,
-	.read = dbgfs_kdamond_pid_read,
+	.read_iter = dbgfs_kdamond_pid_read,
 };
 
 static void dbgfs_fill_ctx_dir(struct dentry *dir, struct damon_ctx *ctx)
@@ -807,12 +809,12 @@ static void dbgfs_destroy_ctx(struct damon_ctx *ctx)
 	damon_destroy_ctx(ctx);
 }
 
-static ssize_t damon_dbgfs_deprecated_read(struct file *file,
-		char __user *buf, size_t count, loff_t *ppos)
+static ssize_t damon_dbgfs_deprecated_read(struct kiocb *iocb,
+					   struct iov_iter *to)
 {
 	static const char kbuf[512] = DAMON_DBGFS_DEPRECATION_NOTICE;
 
-	return simple_read_from_buffer(buf, count, ppos, kbuf, strlen(kbuf));
+	return simple_copy_to_iter(kbuf, &iocb->ki_pos, strlen(kbuf), to);
 }
 
 /*
@@ -900,6 +902,7 @@ out:
 	kfree(ctx_name);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(dbgfs_mk_context_write);
 
 /*
  * Remove a context of @name and its debugfs directory.
@@ -1006,9 +1009,9 @@ out:
 	kfree(ctx_name);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(dbgfs_rm_context_write);
 
-static ssize_t dbgfs_monitor_on_read(struct file *file,
-		char __user *buf, size_t count, loff_t *ppos)
+static ssize_t dbgfs_monitor_on_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	char monitor_on_buf[5];
 	bool monitor_on = damon_nr_running_ctxs() != 0;
@@ -1016,7 +1019,7 @@ static ssize_t dbgfs_monitor_on_read(struct file *file,
 
 	len = scnprintf(monitor_on_buf, 5, monitor_on ? "on\n" : "off\n");
 
-	return simple_read_from_buffer(buf, count, ppos, monitor_on_buf, len);
+	return simple_copy_to_iter(monitor_on_buf, &iocb->ki_pos, len, to);
 }
 
 static ssize_t dbgfs_monitor_on_write(struct file *file,
@@ -1059,6 +1062,7 @@ static ssize_t dbgfs_monitor_on_write(struct file *file,
 	kfree(kbuf);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(dbgfs_monitor_on_write);
 
 static int damon_dbgfs_static_file_open(struct inode *inode, struct file *file)
 {
@@ -1067,23 +1071,23 @@ static int damon_dbgfs_static_file_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations deprecated_fops = {
-	.read = damon_dbgfs_deprecated_read,
+	.read_iter = damon_dbgfs_deprecated_read,
 };
 
 static const struct file_operations mk_contexts_fops = {
 	.open = damon_dbgfs_static_file_open,
-	.write = dbgfs_mk_context_write,
+	.write_iter = dbgfs_mk_context_write_iter,
 };
 
 static const struct file_operations rm_contexts_fops = {
 	.open = damon_dbgfs_static_file_open,
-	.write = dbgfs_rm_context_write,
+	.write_iter = dbgfs_rm_context_write_iter,
 };
 
 static const struct file_operations monitor_on_fops = {
 	.open = damon_dbgfs_static_file_open,
-	.read = dbgfs_monitor_on_read,
-	.write = dbgfs_monitor_on_write,
+	.read_iter = dbgfs_monitor_on_read,
+	.write_iter = dbgfs_monitor_on_write_iter,
 };
 
 static int __init __damon_dbgfs_init(void)

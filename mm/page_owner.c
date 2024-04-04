@@ -741,6 +741,7 @@ ext_put_continue:
 
 	return 0;
 }
+FOPS_READ_ITER_HELPER(read_page_owner);
 
 static loff_t lseek_page_owner(struct file *file, loff_t offset, int orig)
 {
@@ -849,7 +850,7 @@ static void init_early_allocated_pages(void)
 }
 
 static const struct file_operations proc_page_owner_operations = {
-	.read		= read_page_owner,
+	.read_iter	= read_page_owner_iter,
 	.llseek		= lseek_page_owner,
 };
 
@@ -931,7 +932,7 @@ static int page_owner_stack_open(struct inode *inode, struct file *file)
 
 static const struct file_operations page_owner_stack_operations = {
 	.open		= page_owner_stack_open,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= seq_release,
 };

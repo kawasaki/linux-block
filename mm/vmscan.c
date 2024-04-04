@@ -5300,7 +5300,7 @@ static void lru_gen_seq_show_full(struct seq_file *m, struct lruvec *lruvec,
 static int lru_gen_seq_show(struct seq_file *m, void *v)
 {
 	unsigned long seq;
-	bool full = !debugfs_real_fops(m->file)->write;
+	bool full = !debugfs_real_fops(m->file)->write_iter;
 	struct lruvec *lruvec = v;
 	struct lru_gen_folio *lrugen = &lruvec->lrugen;
 	int nid = lruvec_pgdat(lruvec)->node_id;
@@ -5456,9 +5456,9 @@ done:
 }
 
 /* see Documentation/admin-guide/mm/multigen_lru.rst for details */
-static ssize_t lru_gen_seq_write(struct file *file, const char __user *src,
-				 size_t len, loff_t *pos)
+static ssize_t lru_gen_seq_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	size_t len = iov_iter_count(from);
 	void *buf;
 	char *cur, *next;
 	unsigned int flags;
@@ -5476,7 +5476,7 @@ static ssize_t lru_gen_seq_write(struct file *file, const char __user *src,
 	if (!buf)
 		return -ENOMEM;
 
-	if (copy_from_user(buf, src, len)) {
+	if (!copy_from_iter_full(buf, len, from)) {
 		kvfree(buf);
 		return -EFAULT;
 	}
@@ -5535,15 +5535,15 @@ static int lru_gen_seq_open(struct inode *inode, struct file *file)
 
 static const struct file_operations lru_gen_rw_fops = {
 	.open = lru_gen_seq_open,
-	.read = seq_read,
-	.write = lru_gen_seq_write,
+	.read_iter = seq_read_iter,
+	.write_iter = lru_gen_seq_write,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
 static const struct file_operations lru_gen_ro_fops = {
 	.open = lru_gen_seq_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
