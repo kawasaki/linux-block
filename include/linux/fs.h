@@ -2199,6 +2199,22 @@ extern loff_t vfs_dedupe_file_range_one(struct file *src_file, loff_t src_pos,
 					struct file *dst_file, loff_t dst_pos,
 					loff_t len, unsigned int remap_flags);
 
+/*
+ * Drivers can use these to ease transition to using ->read_iter() instead
+ * of ->read(), and ->write_iter() instead of ->write(). Ideally these will
+ * go away one day.
+ */
+#define FOPS_READ_ITER_HELPER(name)					\
+static ssize_t name## _iter(struct kiocb *iocb, struct iov_iter *to)	\
+{									\
+	return vfs_read_iter(iocb, to, name);				\
+}
+#define FOPS_WRITE_ITER_HELPER(name)					\
+static ssize_t name## _iter(struct kiocb *iocb, struct iov_iter *from)	\
+{									\
+	return vfs_write_iter(iocb, from, name);			\
+}
+
 /**
  * enum freeze_holder - holder of the freeze
  * @FREEZE_HOLDER_KERNEL: kernel wants to freeze or thaw filesystem
