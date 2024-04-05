@@ -2463,8 +2463,7 @@ done:
 	return mask;
 }
 
-static ssize_t comedi_write(struct file *file, const char __user *buf,
-			    size_t nbytes, loff_t *offset)
+static ssize_t comedi_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct comedi_subdevice *s;
 	struct comedi_async *async;
@@ -2472,7 +2471,9 @@ static ssize_t comedi_write(struct file *file, const char __user *buf,
 	ssize_t count = 0;
 	int retval = 0;
 	DECLARE_WAITQUEUE(wait, current);
+	struct file *file = iocb->ki_filp;
 	struct comedi_file *cfp = file->private_data;
+	size_t nbytes = iov_iter_count(from);
 	struct comedi_device *dev = cfp->dev;
 	bool become_nonbusy = false;
 	bool attach_locked;
@@ -2546,11 +2547,11 @@ static ssize_t comedi_write(struct file *file, const char __user *buf,
 		wp = async->buf_write_ptr;
 		n1 = min(n, async->prealloc_bufsz - wp);
 		n2 = n - n1;
-		m = copy_from_user(async->prealloc_buf + wp, buf, n1);
+		m = copy_from_iter(async->prealloc_buf + wp, n1, from);
 		if (m)
 			m += n2;
 		else if (n2)
-			m = copy_from_user(async->prealloc_buf, buf + n1, n2);
+			m = copy_from_iter(async->prealloc_buf, n2, from);
 		if (m) {
 			n -= m;
 			retval = -EFAULT;
@@ -2559,8 +2560,6 @@ static ssize_t comedi_write(struct file *file, const char __user *buf,
 
 		count += n;
 		nbytes -= n;
-
-		buf += n;
 	}
 	remove_wait_queue(&async->wait_head, &wait);
 	set_current_state(TASK_RUNNING);
@@ -2599,8 +2598,7 @@ out:
 	return count ? count : retval;
 }
 
-static ssize_t comedi_read(struct file *file, char __user *buf, size_t nbytes,
-			   loff_t *offset)
+static ssize_t comedi_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct comedi_subdevice *s;
 	struct comedi_async *async;
@@ -2608,7 +2606,9 @@ static ssize_t comedi_read(struct file *file, char __user *buf, size_t nbytes,
 	ssize_t count = 0;
 	int retval = 0;
 	DECLARE_WAITQUEUE(wait, current);
+	struct file *file = iocb->ki_filp;
 	struct comedi_file *cfp = file->private_data;
+	size_t nbytes = iov_iter_count(to);
 	struct comedi_device *dev = cfp->dev;
 	unsigned int old_detach_count;
 	bool become_nonbusy = false;
@@ -2680,11 +2680,11 @@ static ssize_t comedi_read(struct file *file, char __user *buf, size_t nbytes,
 		rp = async->buf_read_ptr;
 		n1 = min(n, async->prealloc_bufsz - rp);
 		n2 = n - n1;
-		m = copy_to_user(buf, async->prealloc_buf + rp, n1);
+		m = copy_to_iter(async->prealloc_buf + rp, n1, to);
 		if (m)
 			m += n2;
 		else if (n2)
-			m = copy_to_user(buf + n1, async->prealloc_buf, n2);
+			m = copy_to_iter(async->prealloc_buf, n2, to);
 		if (m) {
 			n -= m;
 			retval = -EFAULT;
@@ -2695,8 +2695,6 @@ static ssize_t comedi_read(struct file *file, char __user *buf, size_t nbytes,
 
 		count += n;
 		nbytes -= n;
-
-		buf += n;
 	}
 	remove_wait_queue(&async->wait_head, &wait);
 	set_current_state(TASK_RUNNING);
@@ -3179,8 +3177,8 @@ static const struct file_operations comedi_fops = {
 	.compat_ioctl = comedi_compat_ioctl,
 	.open = comedi_open,
 	.release = comedi_close,
-	.read = comedi_read,
-	.write = comedi_write,
+	.read_iter = comedi_read,
+	.write_iter = comedi_write,
 	.mmap = comedi_mmap,
 	.poll = comedi_poll,
 	.fasync = comedi_fasync,
