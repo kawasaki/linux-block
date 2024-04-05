@@ -1045,6 +1045,7 @@ static ssize_t keypad_read(struct file *file,
 
 	return tmp - buf;
 }
+FOPS_READ_ITER_HELPER(keypad_read);
 
 static int keypad_open(struct inode *inode, struct file *file)
 {
@@ -1072,7 +1073,7 @@ static int keypad_release(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations keypad_fops = {
-	.read    = keypad_read,		/* read */
+	.read_iter = keypad_read_iter,	/* read */
 	.open    = keypad_open,		/* open */
 	.release = keypad_release,	/* close */
 	.llseek  = default_llseek,
