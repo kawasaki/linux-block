@@ -2964,7 +2964,7 @@ static int client_opens_release(struct inode *inode, struct file *file)
 
 static const struct file_operations client_states_fops = {
 	.open		= client_states_open,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= client_opens_release,
 };
@@ -3017,9 +3017,10 @@ static ssize_t client_ctl_write(struct file *file, const char __user *buf,
 	drop_client(clp);
 	return 7;
 }
+FOPS_WRITE_ITER_HELPER(client_ctl_write);
 
 static const struct file_operations client_ctl_fops = {
-	.write		= client_ctl_write,
+	.write_iter	= client_ctl_write_iter,
 	.release	= simple_transaction_release,
 };
 
