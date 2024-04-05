@@ -14,6 +14,7 @@
 #include <linux/anon_inodes.h>
 #include <linux/namei.h>
 #include <linux/file.h>
+#include <linux/uio.h>
 #include <uapi/linux/mount.h>
 #include "internal.h"
 #include "mount.h"
@@ -21,12 +22,12 @@
 /*
  * Allow the user to read back any error, warning or informational messages.
  */
-static ssize_t fscontext_read(struct file *file,
-			      char __user *_buf, size_t len, loff_t *pos)
+static ssize_t fscontext_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct fs_context *fc = file->private_data;
+	struct fs_context *fc = iocb->ki_filp->private_data;
 	struct fc_log *log = fc->log.log;
 	unsigned int logsize = ARRAY_SIZE(log->buffer);
+	size_t len = iov_iter_count(to);
 	ssize_t ret;
 	char *p;
 	bool need_free;
@@ -54,7 +55,7 @@ static ssize_t fscontext_read(struct file *file,
 	if (n > len)
 		goto err_free;
 	ret = -EFAULT;
-	if (copy_to_user(_buf, p, n) != 0)
+	if (!copy_to_iter_full(p, n, to) != 0)
 		goto err_free;
 	ret = n;
 
@@ -76,7 +77,7 @@ static int fscontext_release(struct inode *inode, struct file *file)
 }
 
 const struct file_operations fscontext_fops = {
-	.read		= fscontext_read,
+	.read_iter	= fscontext_read,
 	.release	= fscontext_release,
 };
 
