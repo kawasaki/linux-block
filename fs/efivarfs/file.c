@@ -12,13 +12,13 @@
 
 #include "internal.h"
 
-static ssize_t efivarfs_file_write(struct file *file,
-		const char __user *userbuf, size_t count, loff_t *ppos)
+static ssize_t efivarfs_file_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct efivar_entry *var = file->private_data;
+	struct efivar_entry *var = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	void *data;
 	u32 attributes;
-	struct inode *inode = file->f_mapping->host;
+	struct inode *inode = iocb->ki_filp->f_mapping->host;
 	unsigned long datasize = count - sizeof(attributes);
 	ssize_t bytes;
 	bool set = false;
@@ -26,13 +26,13 @@ static ssize_t efivarfs_file_write(struct file *file,
 	if (count < sizeof(attributes))
 		return -EINVAL;
 
-	if (copy_from_user(&attributes, userbuf, sizeof(attributes)))
+	if (!copy_from_iter_full(&attributes, sizeof(attributes), from))
 		return -EFAULT;
 
 	if (attributes & ~(EFI_VARIABLE_MASK))
 		return -EINVAL;
 
-	data = memdup_user(userbuf + sizeof(attributes), datasize);
+	data = iterdup(from, datasize);
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
@@ -46,8 +46,8 @@ static ssize_t efivarfs_file_write(struct file *file,
 
 	if (bytes == -ENOENT) {
 		drop_nlink(inode);
-		d_delete(file->f_path.dentry);
-		dput(file->f_path.dentry);
+		d_delete(iocb->ki_filp->f_path.dentry);
+		dput(iocb->ki_filp->f_path.dentry);
 	} else {
 		inode_lock(inode);
 		i_size_write(inode, datasize + sizeof(attributes));
@@ -63,17 +63,16 @@ out:
 	return bytes;
 }
 
-static ssize_t efivarfs_file_read(struct file *file, char __user *userbuf,
-		size_t count, loff_t *ppos)
+static ssize_t efivarfs_file_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct efivar_entry *var = file->private_data;
+	struct efivar_entry *var = iocb->ki_filp->private_data;
 	unsigned long datasize = 0;
 	u32 attributes;
 	void *data;
 	ssize_t size = 0;
 	int err;
 
-	while (!__ratelimit(&file->f_cred->user->ratelimit))
+	while (!__ratelimit(&iocb->ki_filp->f_cred->user->ratelimit))
 		msleep(50);
 
 	err = efivar_entry_size(var, &datasize);
@@ -98,8 +97,8 @@ static ssize_t efivarfs_file_read(struct file *file, char __user *userbuf,
 		goto out_free;
 
 	memcpy(data, &attributes, sizeof(attributes));
-	size = simple_read_from_buffer(userbuf, count, ppos,
-				       data, datasize + sizeof(attributes));
+	size = simple_copy_to_iter(data, &iocb->ki_pos,
+				   datasize + sizeof(attributes), to);
 out_free:
 	kfree(data);
 
@@ -108,6 +107,6 @@ out_free:
 
 const struct file_operations efivarfs_file_operations = {
 	.open	= simple_open,
-	.read	= efivarfs_file_read,
-	.write	= efivarfs_file_write,
+	.read_iter	= efivarfs_file_read,
+	.write_iter	= efivarfs_file_write,
 };
