@@ -448,10 +448,9 @@ static int bch2_data_job_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t bch2_data_job_read(struct file *file, char __user *buf,
-				  size_t len, loff_t *ppos)
+static ssize_t bch2_data_job_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct bch_data_ctx *ctx = container_of(file->private_data, struct bch_data_ctx, thr);
+	struct bch_data_ctx *ctx = container_of(iocb->ki_filp->private_data, struct bch_data_ctx, thr);
 	struct bch_fs *c = ctx->c;
 	struct bch_ioctl_data_event e = {
 		.type			= BCH_DATA_EVENT_PROGRESS,
@@ -461,16 +460,17 @@ static ssize_t bch2_data_job_read(struct file *file, char __user *buf,
 		.p.sectors_done		= atomic64_read(&ctx->stats.sectors_seen),
 		.p.sectors_total	= bch2_fs_usage_read_short(c).used,
 	};
+	size_t len = iov_iter_count(to);
 
 	if (len < sizeof(e))
 		return -EINVAL;
 
-	return copy_to_user_errcode(buf, &e, sizeof(e)) ?: sizeof(e);
+	return copy_to_iter(&e, sizeof(e), to);
 }
 
 static const struct file_operations bcachefs_data_ops = {
 	.release	= bch2_data_job_release,
-	.read		= bch2_data_job_read,
+	.read_iter	= bch2_data_job_read,
 };
 
 static long bch2_ioctl_data(struct bch_fs *c,

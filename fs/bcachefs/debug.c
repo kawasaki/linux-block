@@ -385,12 +385,13 @@ static ssize_t bch2_read_btree(struct file *file, char __user *buf,
 			}))) ?:
 		i->ret;
 }
+FOPS_READ_ITER_HELPER(bch2_read_btree);
 
 static const struct file_operations btree_debug_ops = {
 	.owner		= THIS_MODULE,
 	.open		= bch2_dump_open,
 	.release	= bch2_dump_release,
-	.read		= bch2_read_btree,
+	.read_iter	= bch2_read_btree_iter,
 };
 
 static ssize_t bch2_read_btree_formats(struct file *file, char __user *buf,
@@ -419,12 +420,13 @@ static ssize_t bch2_read_btree_formats(struct file *file, char __user *buf,
 			drop_locks_do(trans, flush_buf(i));
 		}))) ?: i->ret;
 }
+FOPS_READ_ITER_HELPER(bch2_read_btree_formats);
 
 static const struct file_operations btree_format_debug_ops = {
 	.owner		= THIS_MODULE,
 	.open		= bch2_dump_open,
 	.release	= bch2_dump_release,
-	.read		= bch2_read_btree_formats,
+	.read_iter	= bch2_read_btree_formats_iter,
 };
 
 static ssize_t bch2_read_bfloat_failed(struct file *file, char __user *buf,
@@ -458,12 +460,13 @@ static ssize_t bch2_read_bfloat_failed(struct file *file, char __user *buf,
 			}))) ?:
 		i->ret;
 }
+FOPS_READ_ITER_HELPER(bch2_read_bfloat_failed);
 
 static const struct file_operations bfloat_failed_debug_ops = {
 	.owner		= THIS_MODULE,
 	.open		= bch2_dump_open,
 	.release	= bch2_dump_release,
-	.read		= bch2_read_bfloat_failed,
+	.read_iter	= bch2_read_bfloat_failed_iter,
 };
 
 static void bch2_cached_btree_node_to_text(struct printbuf *out, struct bch_fs *c,
@@ -540,12 +543,13 @@ static ssize_t bch2_cached_btree_nodes_read(struct file *file, char __user *buf,
 
 	return ret ?: i->ret;
 }
+FOPS_READ_ITER_HELPER(bch2_cached_btree_nodes_read);
 
 static const struct file_operations cached_btree_nodes_ops = {
 	.owner		= THIS_MODULE,
 	.open		= bch2_dump_open,
 	.release	= bch2_dump_release,
-	.read		= bch2_cached_btree_nodes_read,
+	.read_iter	= bch2_cached_btree_nodes_read_iter,
 };
 
 typedef int (*list_cmp_fn)(const struct list_head *l, const struct list_head *r);
@@ -627,12 +631,13 @@ unlocked:
 
 	return ret ?: i->ret;
 }
+FOPS_READ_ITER_HELPER(bch2_btree_transactions_read);
 
 static const struct file_operations btree_transactions_ops = {
 	.owner		= THIS_MODULE,
 	.open		= bch2_dump_open,
 	.release	= bch2_dump_release,
-	.read		= bch2_btree_transactions_read,
+	.read_iter	= bch2_btree_transactions_read_iter,
 };
 
 static ssize_t bch2_journal_pins_read(struct file *file, char __user *buf,
@@ -667,12 +672,13 @@ static ssize_t bch2_journal_pins_read(struct file *file, char __user *buf,
 
 	return i->ret;
 }
+FOPS_READ_ITER_HELPER(bch2_journal_pins_read);
 
 static const struct file_operations journal_pins_ops = {
 	.owner		= THIS_MODULE,
 	.open		= bch2_dump_open,
 	.release	= bch2_dump_release,
-	.read		= bch2_journal_pins_read,
+	.read_iter	= bch2_journal_pins_read_iter,
 };
 
 static ssize_t bch2_btree_updates_read(struct file *file, char __user *buf,
@@ -700,12 +706,13 @@ static ssize_t bch2_btree_updates_read(struct file *file, char __user *buf,
 
 	return i->ret;
 }
+FOPS_READ_ITER_HELPER(bch2_btree_updates_read);
 
 static const struct file_operations btree_updates_ops = {
 	.owner		= THIS_MODULE,
 	.open		= bch2_dump_open,
 	.release	= bch2_dump_release,
-	.read		= bch2_btree_updates_read,
+	.read_iter	= bch2_btree_updates_read_iter,
 };
 
 static int btree_transaction_stats_open(struct inode *inode, struct file *file)
@@ -800,12 +807,13 @@ static ssize_t btree_transaction_stats_read(struct file *file, char __user *buf,
 
 	return i->ret;
 }
+FOPS_READ_ITER_HELPER(btree_transaction_stats_read);
 
 static const struct file_operations btree_transaction_stats_op = {
 	.owner		= THIS_MODULE,
 	.open		= btree_transaction_stats_open,
 	.release	= btree_transaction_stats_release,
-	.read		= btree_transaction_stats_read,
+	.read_iter	= btree_transaction_stats_read_iter,
 };
 
 /* walk btree transactions until we find a deadlock and print it */
@@ -865,12 +873,13 @@ static ssize_t bch2_btree_deadlock_read(struct file *file, char __user *buf,
 
 	return ret ?: i->ret;
 }
+FOPS_READ_ITER_HELPER(bch2_btree_deadlock_read);
 
 static const struct file_operations btree_deadlock_ops = {
 	.owner		= THIS_MODULE,
 	.open		= bch2_dump_open,
 	.release	= bch2_dump_release,
-	.read		= bch2_btree_deadlock_read,
+	.read_iter	= bch2_btree_deadlock_read_iter,
 };
 
 void bch2_fs_debug_exit(struct bch_fs *c)

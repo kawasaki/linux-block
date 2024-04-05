@@ -27,11 +27,11 @@ int bch2_run_thread_with_file(struct thread_with_file *thr,
 	int ret, fd = -1;
 	unsigned fd_flags = O_CLOEXEC;
 
-	if (fops->read && fops->write)
+	if (fops->read_iter && fops->write_iter)
 		fd_flags |= O_RDWR;
-	else if (fops->read)
+	else if (fops->read_iter)
 		fd_flags |= O_RDONLY;
-	else if (fops->write)
+	else if (fops->write_iter)
 		fd_flags |= O_WRONLY;
 
 	char name[TASK_COMM_LEN];
@@ -150,6 +150,7 @@ static ssize_t thread_with_stdio_read(struct file *file, char __user *ubuf,
 
 	return copied ?: ret;
 }
+FOPS_READ_ITER_HELPER(thread_with_stdio_read);
 
 static int thread_with_stdio_release(struct inode *inode, struct file *file)
 {
@@ -220,6 +221,7 @@ static ssize_t thread_with_stdio_write(struct file *file, const char __user *ubu
 
 	return copied ?: ret;
 }
+FOPS_WRITE_ITER_HELPER(thread_with_stdio_write);
 
 static __poll_t thread_with_stdio_poll(struct file *file, struct poll_table_struct *wait)
 {
@@ -275,8 +277,8 @@ static long thread_with_stdio_ioctl(struct file *file, unsigned int cmd, unsigne
 }
 
 static const struct file_operations thread_with_stdio_fops = {
-	.read		= thread_with_stdio_read,
-	.write		= thread_with_stdio_write,
+	.read_iter	= thread_with_stdio_read_iter,
+	.write_iter	= thread_with_stdio_write_iter,
 	.poll		= thread_with_stdio_poll,
 	.flush		= thread_with_stdio_flush,
 	.release	= thread_with_stdio_release,
@@ -284,7 +286,7 @@ static const struct file_operations thread_with_stdio_fops = {
 };
 
 static const struct file_operations thread_with_stdout_fops = {
-	.read		= thread_with_stdio_read,
+	.read_iter	= thread_with_stdio_read_iter,
 	.poll		= thread_with_stdout_poll,
 	.flush		= thread_with_stdio_flush,
 	.release	= thread_with_stdio_release,
