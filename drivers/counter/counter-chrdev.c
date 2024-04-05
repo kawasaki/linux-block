@@ -99,6 +99,7 @@ static ssize_t counter_chrdev_read(struct file *filp, char __user *buf,
 
 	return copied;
 }
+FOPS_READ_ITER_HELPER(counter_chrdev_read);
 
 static __poll_t counter_chrdev_poll(struct file *filp,
 				    struct poll_table_struct *pollt)
@@ -454,7 +455,7 @@ out_unlock:
 
 static const struct file_operations counter_fops = {
 	.owner = THIS_MODULE,
-	.read = counter_chrdev_read,
+	.read_iter = counter_chrdev_read_iter,
 	.poll = counter_chrdev_poll,
 	.unlocked_ioctl = counter_chrdev_ioctl,
 	.open = counter_chrdev_open,
