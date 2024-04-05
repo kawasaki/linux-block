@@ -118,10 +118,10 @@ static int userio_char_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t userio_char_read(struct file *file, char __user *user_buffer,
-				size_t count, loff_t *ppos)
+static ssize_t userio_char_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct userio_device *userio = file->private_data;
+	struct userio_device *userio = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	int error;
 	size_t nonwrap_len, copylen;
 	unsigned char buf[USERIO_BUFSIZE];
@@ -153,7 +153,7 @@ static ssize_t userio_char_read(struct file *file, char __user *user_buffer,
 			break;
 
 		/* buffer was/is empty */
-		if (file->f_flags & O_NONBLOCK)
+		if (iocb->ki_filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
 		/*
@@ -170,16 +170,16 @@ static ssize_t userio_char_read(struct file *file, char __user *user_buffer,
 	}
 
 	if (copylen)
-		if (copy_to_user(user_buffer, buf, copylen))
+		if (!copy_to_iter_full(buf, copylen, to))
 			return -EFAULT;
 
 	return copylen;
 }
 
-static ssize_t userio_char_write(struct file *file, const char __user *buffer,
-				 size_t count, loff_t *ppos)
+static ssize_t userio_char_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct userio_device *userio = file->private_data;
+	struct userio_device *userio = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct userio_cmd cmd;
 	int error;
 
@@ -188,7 +188,7 @@ static ssize_t userio_char_write(struct file *file, const char __user *buffer,
 		return -EINVAL;
 	}
 
-	if (copy_from_user(&cmd, buffer, sizeof(cmd)))
+	if (!copy_from_iter_full(&cmd, sizeof(cmd), from))
 		return -EFAULT;
 
 	error = mutex_lock_interruptible(&userio->mutex);
@@ -264,8 +264,8 @@ static const struct file_operations userio_fops = {
 	.owner		= THIS_MODULE,
 	.open		= userio_char_open,
 	.release	= userio_char_release,
-	.read		= userio_char_read,
-	.write		= userio_char_write,
+	.read_iter	= userio_char_read,
+	.write_iter	= userio_char_write,
 	.poll		= userio_char_poll,
 };
 
