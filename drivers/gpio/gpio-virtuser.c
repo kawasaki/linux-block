@@ -148,12 +148,11 @@ static int gpio_virtuser_get_array_value(struct gpio_descs *descs,
 	return ctx.ret;
 }
 
-static ssize_t gpio_virtuser_value_array_do_read(struct file *file,
-						 char __user *user_buf,
-						 size_t size, loff_t *ppos,
+static ssize_t gpio_virtuser_value_array_do_read(struct kiocb *iocb,
+						 struct iov_iter *to,
 						 bool atomic)
 {
-	struct gpio_virtuser_line_data *data = file->private_data;
+	struct gpio_virtuser_line_data *data = iocb->ki_filp->private_data;
 	struct gpio_descs *descs = data->ad.descs;
 	size_t bufsize;
 	int ret;
@@ -175,8 +174,7 @@ static ssize_t gpio_virtuser_value_array_do_read(struct file *file,
 
 	gpio_virtuser_dbgfs_emit_value_array(buf, values, descs->ndescs);
 
-	return simple_read_from_buffer(user_buf, size, ppos, buf,
-				       descs->ndescs + 1);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, descs->ndescs + 1, to);
 }
 
 static int gpio_virtuser_dbgfs_parse_value_array(const char *buf,
@@ -228,13 +226,13 @@ static int gpio_virtuser_set_array_value(struct gpio_descs *descs,
 	return ctx.ret;
 }
 
-static ssize_t gpio_virtuser_value_array_do_write(struct file *file,
-						  const char __user *user_buf,
-						  size_t count, loff_t *ppos,
+static ssize_t gpio_virtuser_value_array_do_write(struct kiocb *iocb,
+						  struct iov_iter *from,
 						  bool atomic)
 {
-	struct gpio_virtuser_line_data *data = file->private_data;
+	struct gpio_virtuser_line_data *data = iocb->ki_filp->private_data;
 	struct gpio_descs *descs = data->ad.descs;
+	size_t count = iov_iter_count(from);
 	int ret;
 
 	if (count - 1 != descs->ndescs)
@@ -244,7 +242,7 @@ static ssize_t gpio_virtuser_value_array_do_write(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
-	ret = simple_write_to_buffer(buf, count, ppos, user_buf, count);
+	ret = simple_copy_from_iter(buf, &iocb->ki_pos, count, from);
 	if (ret < 0)
 		return ret;
 
@@ -264,50 +262,42 @@ static ssize_t gpio_virtuser_value_array_do_write(struct file *file,
 	return count;
 }
 
-static ssize_t gpio_virtuser_value_array_read(struct file *file,
-					      char __user *user_buf,
-					      size_t count, loff_t *ppos)
+static ssize_t gpio_virtuser_value_array_read(struct kiocb *iocb,
+					      struct iov_iter *from)
 {
-	return gpio_virtuser_value_array_do_read(file, user_buf, count, ppos,
-						 false);
+	return gpio_virtuser_value_array_do_read(iocb, from, false);
 }
 
-static ssize_t gpio_virtuser_value_array_write(struct file *file,
-					       const char __user *user_buf,
-					       size_t count, loff_t *ppos)
+static ssize_t gpio_virtuser_value_array_write(struct kiocb *iocb,
+					       struct iov_iter *from)
 {
-	return gpio_virtuser_value_array_do_write(file, user_buf, count, ppos,
-						  false);
+	return gpio_virtuser_value_array_do_write(iocb, from, false);
 }
 
 static const struct file_operations gpio_virtuser_value_array_fops = {
-	.read = gpio_virtuser_value_array_read,
-	.write = gpio_virtuser_value_array_write,
+	.read_iter = gpio_virtuser_value_array_read,
+	.write_iter = gpio_virtuser_value_array_write,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
 static ssize_t
-gpio_virtuser_value_array_atomic_read(struct file *file, char __user *user_buf,
-				      size_t count, loff_t *ppos)
+gpio_virtuser_value_array_atomic_read(struct kiocb *iocb, struct iov_iter *from)
 {
-	return gpio_virtuser_value_array_do_read(file, user_buf, count, ppos,
-						 true);
+	return gpio_virtuser_value_array_do_read(iocb, from, true);
 }
 
 static ssize_t
-gpio_virtuser_value_array_atomic_write(struct file *file,
-				       const char __user *user_buf,
-				       size_t count, loff_t *ppos)
+gpio_virtuser_value_array_atomic_write(struct kiocb *iocb,
+				       struct iov_iter *from)
 {
-	return gpio_virtuser_value_array_do_write(file, user_buf, count, ppos,
-						  true);
+	return gpio_virtuser_value_array_do_write(iocb, from, true);
 }
 
 static const struct file_operations gpio_virtuser_value_array_atomic_fops = {
-	.read = gpio_virtuser_value_array_atomic_read,
-	.write = gpio_virtuser_value_array_atomic_write,
+	.read_iter = gpio_virtuser_value_array_atomic_read,
+	.write_iter = gpio_virtuser_value_array_atomic_write,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -335,12 +325,11 @@ static int gpio_virtuser_get_direction_atomic(struct gpio_desc *desc)
 	return ctx.ret;
 }
 
-static ssize_t gpio_virtuser_direction_do_read(struct file *file,
-					       char __user *user_buf,
-					       size_t size, loff_t *ppos,
+static ssize_t gpio_virtuser_direction_do_read(struct kiocb *iocb,
+					       struct iov_iter *to,
 					       bool atomic)
 {
-	struct gpio_virtuser_line_data *data = file->private_data;
+	struct gpio_virtuser_line_data *data = iocb->ki_filp->private_data;
 	struct gpio_desc *desc = data->ad.desc;
 	char buf[32];
 	int dir;
@@ -354,7 +343,7 @@ static ssize_t gpio_virtuser_direction_do_read(struct file *file,
 
 	snprintf(buf, sizeof(buf), "%s\n", dir ? "input" : "output");
 
-	return simple_read_from_buffer(user_buf, size, ppos, buf, strlen(buf));
+	return simple_copy_to_iter(buf, &iocb->ki_pos, strlen(buf), to);
 }
 
 static int gpio_virtuser_set_direction(struct gpio_desc *desc, int dir, int val)
@@ -390,17 +379,17 @@ static int gpio_virtuser_set_direction_atomic(struct gpio_desc *desc,
 	return ctx.ret;
 }
 
-static ssize_t gpio_virtuser_direction_do_write(struct file *file,
-						const char __user *user_buf,
-						size_t count, loff_t *ppos,
+static ssize_t gpio_virtuser_direction_do_write(struct kiocb *iocb,
+						struct iov_iter *from,
 						bool atomic)
 {
-	struct gpio_virtuser_line_data *data = file->private_data;
+	struct gpio_virtuser_line_data *data = iocb->ki_filp->private_data;
 	struct gpio_desc *desc = data->ad.desc;
+	size_t count = iov_iter_count(from);
 	char buf[32], *trimmed;
 	int ret, dir, val = 0;
 
-	ret = simple_write_to_buffer(buf, sizeof(buf), ppos, user_buf, count);
+	ret = simple_copy_from_iter(buf, &iocb->ki_pos, sizeof(buf), from);
 	if (ret < 0)
 		return ret;
 
@@ -427,49 +416,41 @@ static ssize_t gpio_virtuser_direction_do_write(struct file *file,
 	return count;
 }
 
-static ssize_t gpio_virtuser_direction_read(struct file *file,
-					    char __user *user_buf,
-					    size_t size, loff_t *ppos)
+static ssize_t gpio_virtuser_direction_read(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
-	return gpio_virtuser_direction_do_read(file, user_buf, size, ppos,
-					       false);
+	return gpio_virtuser_direction_do_read(iocb, to, false);
 }
 
-static ssize_t gpio_virtuser_direction_write(struct file *file,
-					     const char __user *user_buf,
-					     size_t count, loff_t *ppos)
+static ssize_t gpio_virtuser_direction_write(struct kiocb *iocb,
+					     struct iov_iter *from)
 {
-	return gpio_virtuser_direction_do_write(file, user_buf, count, ppos,
-						false);
+	return gpio_virtuser_direction_do_write(iocb, from, false);
 }
 
 static const struct file_operations gpio_virtuser_direction_fops = {
-	.read = gpio_virtuser_direction_read,
-	.write = gpio_virtuser_direction_write,
+	.read_iter = gpio_virtuser_direction_read,
+	.write_iter = gpio_virtuser_direction_write,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t gpio_virtuser_direction_atomic_read(struct file *file,
-						   char __user *user_buf,
-						   size_t size, loff_t *ppos)
+static ssize_t gpio_virtuser_direction_atomic_read(struct kiocb *iocb,
+						   struct iov_iter *to)
 {
-	return gpio_virtuser_direction_do_read(file, user_buf, size, ppos,
-					       true);
+	return gpio_virtuser_direction_do_read(iocb, to, true);
 }
 
-static ssize_t gpio_virtuser_direction_atomic_write(struct file *file,
-						    const char __user *user_buf,
-						    size_t count, loff_t *ppos)
+static ssize_t gpio_virtuser_direction_atomic_write(struct kiocb *iocb,
+						    struct iov_iter *to)
 {
-	return gpio_virtuser_direction_do_write(file, user_buf, count, ppos,
-						true);
+	return gpio_virtuser_direction_do_write(iocb, to, true);
 }
 
 static const struct file_operations gpio_virtuser_direction_atomic_fops = {
-	.read = gpio_virtuser_direction_atomic_read,
-	.write = gpio_virtuser_direction_atomic_write,
+	.read_iter = gpio_virtuser_direction_atomic_read,
+	.write_iter = gpio_virtuser_direction_atomic_write,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -598,11 +579,10 @@ DEFINE_DEBUGFS_ATTRIBUTE(gpio_virtuser_debounce_fops,
 			 gpio_virtuser_debounce_set,
 			 "%llu\n");
 
-static ssize_t gpio_virtuser_consumer_read(struct file *file,
-					   char __user *user_buf,
-					   size_t size, loff_t *ppos)
+static ssize_t gpio_virtuser_consumer_read(struct kiocb *iocb,
+					   struct iov_iter *to)
 {
-	struct gpio_virtuser_line_data *data = file->private_data;
+	struct gpio_virtuser_line_data *data = iocb->ki_filp->private_data;
 	char buf[GPIO_VIRTUSER_NAME_BUF_LEN + 1];
 	ssize_t ret;
 
@@ -611,19 +591,19 @@ static ssize_t gpio_virtuser_consumer_read(struct file *file,
 	scoped_guard(mutex, &data->consumer_lock)
 		ret = snprintf(buf, sizeof(buf), "%s\n", data->consumer);
 
-	return simple_read_from_buffer(user_buf, size, ppos, buf, ret);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, ret, to);
 }
 
-static ssize_t gpio_virtuser_consumer_write(struct file *file,
-					    const char __user *user_buf,
-					    size_t count, loff_t *ppos)
+static ssize_t gpio_virtuser_consumer_write(struct kiocb *iocb,
+					    struct iov_iter *from)
 {
-	struct gpio_virtuser_line_data *data = file->private_data;
+	struct gpio_virtuser_line_data *data = iocb->ki_filp->private_data;
 	char buf[GPIO_VIRTUSER_NAME_BUF_LEN + 2];
+	size_t count = iov_iter_count(from);
 	int ret;
 
-	ret = simple_write_to_buffer(buf, GPIO_VIRTUSER_NAME_BUF_LEN, ppos,
-				     user_buf, count);
+	ret = simple_copy_from_iter(buf, &iocb->ki_pos,
+					GPIO_VIRTUSER_NAME_BUF_LEN, from);
 	if (ret < 0)
 		return ret;
 
@@ -640,8 +620,8 @@ static ssize_t gpio_virtuser_consumer_write(struct file *file,
 }
 
 static const struct file_operations gpio_virtuser_consumer_fops = {
-	.read = gpio_virtuser_consumer_read,
-	.write = gpio_virtuser_consumer_write,
+	.read_iter = gpio_virtuser_consumer_read,
+	.write_iter = gpio_virtuser_consumer_write,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,

@@ -1617,10 +1617,10 @@ static __poll_t linereq_poll(struct file *file,
 	return events;
 }
 
-static ssize_t linereq_read(struct file *file, char __user *buf,
-			    size_t count, loff_t *f_ps)
+static ssize_t linereq_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct linereq *lr = file->private_data;
+	struct linereq *lr = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct gpio_v2_line_event le;
 	ssize_t bytes_read = 0;
 	int ret;
@@ -1639,7 +1639,7 @@ static ssize_t linereq_read(struct file *file, char __user *buf,
 				if (bytes_read)
 					return bytes_read;
 
-				if (file->f_flags & O_NONBLOCK)
+				if (iocb->ki_filp->f_flags & O_NONBLOCK)
 					return -EAGAIN;
 
 				ret = wait_event_interruptible_locked(lr->wait,
@@ -1659,7 +1659,7 @@ static ssize_t linereq_read(struct file *file, char __user *buf,
 			}
 		}
 
-		if (copy_to_user(buf + bytes_read, &le, sizeof(le)))
+		if (!copy_to_iter_full(&le, sizeof(le), to))
 			return -EFAULT;
 		bytes_read += sizeof(le);
 	} while (count >= bytes_read + sizeof(le));
@@ -1717,7 +1717,7 @@ static void linereq_show_fdinfo(struct seq_file *out, struct file *file)
 
 static const struct file_operations line_fileops = {
 	.release = linereq_release,
-	.read = linereq_read,
+	.read_iter = linereq_read,
 	.poll = linereq_poll,
 	.owner = THIS_MODULE,
 	.llseek = noop_llseek,
@@ -1955,10 +1955,10 @@ struct compat_gpioeevent_data {
 	u32		id;
 };
 
-static ssize_t lineevent_read(struct file *file, char __user *buf,
-			      size_t count, loff_t *f_ps)
+static ssize_t lineevent_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct lineevent_state *le = file->private_data;
+	struct lineevent_state *le = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct gpioevent_data ge;
 	ssize_t bytes_read = 0;
 	ssize_t ge_size;
@@ -1991,7 +1991,7 @@ static ssize_t lineevent_read(struct file *file, char __user *buf,
 				if (bytes_read)
 					return bytes_read;
 
-				if (file->f_flags & O_NONBLOCK)
+				if (iocb->ki_filp->f_flags & O_NONBLOCK)
 					return -EAGAIN;
 
 				ret = wait_event_interruptible_locked(le->wait,
@@ -2011,7 +2011,7 @@ static ssize_t lineevent_read(struct file *file, char __user *buf,
 			}
 		}
 
-		if (copy_to_user(buf + bytes_read, &ge, ge_size))
+		if (!copy_to_iter_full(&ge, ge_size, to))
 			return -EFAULT;
 		bytes_read += ge_size;
 	} while (count >= bytes_read + ge_size);
@@ -2083,7 +2083,7 @@ static long lineevent_ioctl_compat(struct file *file, unsigned int cmd,
 
 static const struct file_operations lineevent_fileops = {
 	.release = lineevent_release,
-	.read = lineevent_read,
+	.read_iter = lineevent_read,
 	.poll = lineevent_poll,
 	.owner = THIS_MODULE,
 	.llseek = noop_llseek,
@@ -2668,11 +2668,11 @@ static __poll_t lineinfo_watch_poll(struct file *file,
 	return events;
 }
 
-static ssize_t lineinfo_watch_read(struct file *file, char __user *buf,
-				   size_t count, loff_t *off)
+static ssize_t lineinfo_watch_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct gpio_chardev_data *cdev = file->private_data;
+	struct gpio_chardev_data *cdev = iocb->ki_filp->private_data;
 	struct gpio_v2_line_info_changed event;
+	size_t count = iov_iter_count(to);
 	ssize_t bytes_read = 0;
 	int ret;
 	size_t event_size;
@@ -2694,7 +2694,7 @@ static ssize_t lineinfo_watch_read(struct file *file, char __user *buf,
 				if (bytes_read)
 					return bytes_read;
 
-				if (file->f_flags & O_NONBLOCK)
+				if (iocb->ki_filp->f_flags & O_NONBLOCK)
 					return -EAGAIN;
 
 				ret = wait_event_interruptible_locked(cdev->wait,
@@ -2724,18 +2724,17 @@ static ssize_t lineinfo_watch_read(struct file *file, char __user *buf,
 
 #ifdef CONFIG_GPIO_CDEV_V1
 		if (event_size == sizeof(struct gpio_v2_line_info_changed)) {
-			if (copy_to_user(buf + bytes_read, &event, event_size))
+			if (!copy_to_iter_full(&event, event_size, to))
 				return -EFAULT;
 		} else {
 			struct gpioline_info_changed event_v1;
 
 			gpio_v2_line_info_changed_to_v1(&event, &event_v1);
-			if (copy_to_user(buf + bytes_read, &event_v1,
-					 event_size))
+			if (!copy_to_iter_full(&event_v1, event_size, to))
 				return -EFAULT;
 		}
 #else
-		if (copy_to_user(buf + bytes_read, &event, event_size))
+		if (!copy_to_iter_full(&event, event_size, to))
 			return -EFAULT;
 #endif
 		bytes_read += event_size;
@@ -2840,7 +2839,7 @@ static const struct file_operations gpio_fileops = {
 	.release = gpio_chrdev_release,
 	.open = gpio_chrdev_open,
 	.poll = lineinfo_watch_poll,
-	.read = lineinfo_watch_read,
+	.read_iter = lineinfo_watch_read,
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = gpio_ioctl,
 #ifdef CONFIG_COMPAT
