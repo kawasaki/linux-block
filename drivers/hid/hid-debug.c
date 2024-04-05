@@ -3761,6 +3761,7 @@ out:
 	mutex_unlock(&list->read_mutex);
 	return ret;
 }
+FOPS_READ_ITER_HELPER(hid_debug_events_read);
 
 static __poll_t hid_debug_events_poll(struct file *file, poll_table *wait)
 {
@@ -3795,7 +3796,7 @@ DEFINE_SHOW_ATTRIBUTE(hid_debug_rdesc);
 static const struct file_operations hid_debug_events_fops = {
 	.owner =        THIS_MODULE,
 	.open           = hid_debug_events_open,
-	.read           = hid_debug_events_read,
+	.read_iter      = hid_debug_events_read_iter,
 	.poll		= hid_debug_events_poll,
 	.release        = hid_debug_events_release,
 	.llseek		= noop_llseek,

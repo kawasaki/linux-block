@@ -668,6 +668,7 @@ static ssize_t hid_sensor_custom_read(struct file *file, char __user *buf,
 
 	return copied;
 }
+FOPS_READ_ITER_HELPER(hid_sensor_custom_read);
 
 static int hid_sensor_custom_release(struct inode *inode, struct file *file)
 {
@@ -713,7 +714,7 @@ static __poll_t hid_sensor_custom_poll(struct file *file,
 
 static const struct file_operations hid_sensor_custom_fops = {
 	.open =  hid_sensor_custom_open,
-	.read =  hid_sensor_custom_read,
+	.read_iter =  hid_sensor_custom_read_iter,
 	.release = hid_sensor_custom_release,
 	.poll = hid_sensor_custom_poll,
 	.llseek = noop_llseek,
