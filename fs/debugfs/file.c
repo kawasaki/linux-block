@@ -318,15 +318,13 @@ FULL_PROXY_FUNC(llseek, loff_t, filp,
 		PROTO(struct file *filp, loff_t offset, int whence),
 		ARGS(filp, offset, whence));
 
-FULL_PROXY_FUNC(read, ssize_t, filp,
-		PROTO(struct file *filp, char __user *buf, size_t size,
-			loff_t *ppos),
-		ARGS(filp, buf, size, ppos));
+FULL_PROXY_FUNC(read_iter, ssize_t, iocb->ki_filp,
+		PROTO(struct kiocb *iocb, struct iov_iter *to),
+		ARGS(iocb, to));
 
-FULL_PROXY_FUNC(write, ssize_t, filp,
-		PROTO(struct file *filp, const char __user *buf, size_t size,
-			loff_t *ppos),
-		ARGS(filp, buf, size, ppos));
+FULL_PROXY_FUNC(write_iter, ssize_t, iocb->ki_filp,
+		PROTO(struct kiocb *iocb, struct iov_iter *from),
+		ARGS(iocb, from));
 
 FULL_PROXY_FUNC(unlocked_ioctl, long, filp,
 		PROTO(struct file *filp, unsigned int cmd, unsigned long arg),
@@ -376,10 +374,10 @@ static void __full_proxy_fops_init(struct file_operations *proxy_fops,
 	proxy_fops->release = full_proxy_release;
 	if (real_fops->llseek)
 		proxy_fops->llseek = full_proxy_llseek;
-	if (real_fops->read)
-		proxy_fops->read = full_proxy_read;
-	if (real_fops->write)
-		proxy_fops->write = full_proxy_write;
+	if (real_fops->read_iter)
+		proxy_fops->read_iter = full_proxy_read_iter;
+	if (real_fops->write_iter)
+		proxy_fops->write_iter = full_proxy_write_iter;
 	if (real_fops->poll)
 		proxy_fops->poll = full_proxy_poll;
 	if (real_fops->unlocked_ioctl)
@@ -914,19 +912,17 @@ void debugfs_create_atomic_t(const char *name, umode_t mode,
 }
 EXPORT_SYMBOL_GPL(debugfs_create_atomic_t);
 
-static ssize_t __debugfs_read_file_bool(struct file *file,
-					char __user *user_buf, size_t count,
-					loff_t *ppos)
+ssize_t debugfs_read_file_bool(struct kiocb *iocb, struct iov_iter *to)
 {
 	char buf[2];
 	bool val;
 	int r;
-	struct dentry *dentry = F_DENTRY(file);
+	struct dentry *dentry = F_DENTRY(iocb->ki_filp);
 
 	r = debugfs_file_get(dentry);
 	if (unlikely(r))
 		return r;
-	val = *(bool *)file->private_data;
+	val = *(bool *)iocb->ki_filp->private_data;
 	debugfs_file_put(dentry);
 
 	if (val)
@@ -934,25 +930,19 @@ static ssize_t __debugfs_read_file_bool(struct file *file,
 	else
 		buf[0] = 'N';
 	buf[1] = '\n';
-	return simple_read_from_buffer(user_buf, count, ppos, buf, 2);
-}
-
-ssize_t debugfs_read_file_bool(struct kiocb *iocb, struct iov_iter *to)
-{
-	return vfs_read_iter(iocb, to, __debugfs_read_file_bool);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, 2, to);
 }
 EXPORT_SYMBOL_GPL(debugfs_read_file_bool);
 
-static ssize_t __debugfs_write_file_bool(struct file *file,
-					 const char __user *user_buf,
-					 size_t count, loff_t *ppos)
+ssize_t debugfs_write_file_bool(struct kiocb *iocb, struct iov_iter *from)
 {
 	bool bv;
 	int r;
-	bool *val = file->private_data;
-	struct dentry *dentry = F_DENTRY(file);
+	bool *val = iocb->ki_filp->private_data;
+	struct dentry *dentry = F_DENTRY(iocb->ki_filp);
+	size_t count = iov_iter_count(from);
 
-	r = kstrtobool_from_user(user_buf, count, &bv);
+	r = kstrtobool_from_iter(from, count, &bv);
 	if (!r) {
 		r = debugfs_file_get(dentry);
 		if (unlikely(r))
@@ -963,12 +953,7 @@ static ssize_t __debugfs_write_file_bool(struct file *file,
 
 	return count;
 }
-
-ssize_t debugfs_write_file_bool(struct kiocb *iocb, struct iov_iter *from)
-{
-	return vfs_write_iter(iocb, from, __debugfs_write_file_bool);
-}
-EXPORT_SYMBOL_GPL(debugfs_write_file_bool);
+EXPORT_SYMBOL(debugfs_write_file_bool);
 
 static const struct file_operations fops_bool = {
 	.read_iter =	debugfs_read_file_bool,
