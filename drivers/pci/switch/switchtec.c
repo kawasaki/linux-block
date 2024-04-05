@@ -15,6 +15,7 @@
 #include <linux/wait.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/nospec.h>
+#include <linux/uio.h>
 
 MODULE_DESCRIPTION("Microsemi Switchtec(tm) PCIe Management Driver");
 MODULE_VERSION("0.1");
@@ -505,11 +506,11 @@ static int lock_mutex_and_test_alive(struct switchtec_dev *stdev)
 	return 0;
 }
 
-static ssize_t switchtec_dev_write(struct file *filp, const char __user *data,
-				   size_t size, loff_t *off)
+static ssize_t switchtec_dev_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct switchtec_user *stuser = filp->private_data;
+	struct switchtec_user *stuser = iocb->ki_filp->private_data;
 	struct switchtec_dev *stdev = stuser->stdev;
+	size_t size = iov_iter_count(from);
 	int rc;
 
 	if (size < sizeof(stuser->cmd) ||
@@ -527,7 +528,7 @@ static ssize_t switchtec_dev_write(struct file *filp, const char __user *data,
 		goto out;
 	}
 
-	rc = copy_from_user(&stuser->cmd, data, sizeof(stuser->cmd));
+	rc = !copy_from_iter_full(&stuser->cmd, sizeof(stuser->cmd), from);
 	if (rc) {
 		rc = -EFAULT;
 		goto out;
@@ -539,8 +540,7 @@ static ssize_t switchtec_dev_write(struct file *filp, const char __user *data,
 		goto out;
 	}
 
-	data += sizeof(stuser->cmd);
-	rc = copy_from_user(&stuser->data, data, size - sizeof(stuser->cmd));
+	rc = !copy_from_iter_full(&stuser->data, size - sizeof(stuser->cmd), from);
 	if (rc) {
 		rc = -EFAULT;
 		goto out;
@@ -557,11 +557,11 @@ out:
 	return size;
 }
 
-static ssize_t switchtec_dev_read(struct file *filp, char __user *data,
-				  size_t size, loff_t *off)
+static ssize_t switchtec_dev_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct switchtec_user *stuser = filp->private_data;
+	struct switchtec_user *stuser = iocb->ki_filp->private_data;
 	struct switchtec_dev *stdev = stuser->stdev;
+	size_t size = iov_iter_count(to);
 	int rc;
 
 	if (size < sizeof(stuser->cmd) ||
@@ -581,7 +581,7 @@ static ssize_t switchtec_dev_read(struct file *filp, char __user *data,
 
 	mutex_unlock(&stdev->mrpc_mutex);
 
-	if (filp->f_flags & O_NONBLOCK) {
+	if (iocb->ki_filp->f_flags & O_NONBLOCK) {
 		if (!stuser->cmd_done)
 			return -EAGAIN;
 	} else {
@@ -605,16 +605,15 @@ static ssize_t switchtec_dev_read(struct file *filp, char __user *data,
 		return -EBADE;
 	}
 
-	rc = copy_to_user(data, &stuser->return_code,
-			  sizeof(stuser->return_code));
+	rc = !copy_to_iter_full(&stuser->return_code,
+				sizeof(stuser->return_code), to);
 	if (rc) {
 		mutex_unlock(&stdev->mrpc_mutex);
 		return -EFAULT;
 	}
 
-	data += sizeof(stuser->return_code);
-	rc = copy_to_user(data, &stuser->data,
-			  size - sizeof(stuser->return_code));
+	rc = !copy_to_iter_full(&stuser->data,
+				size - sizeof(stuser->return_code), to);
 	if (rc) {
 		mutex_unlock(&stdev->mrpc_mutex);
 		return -EFAULT;
@@ -1249,8 +1248,8 @@ static const struct file_operations switchtec_fops = {
 	.owner = THIS_MODULE,
 	.open = switchtec_dev_open,
 	.release = switchtec_dev_release,
-	.write = switchtec_dev_write,
-	.read = switchtec_dev_read,
+	.write_iter = switchtec_dev_write,
+	.read_iter = switchtec_dev_read,
 	.poll = switchtec_dev_poll,
 	.unlocked_ioctl = switchtec_dev_ioctl,
 	.compat_ioctl = compat_ptr_ioctl,
