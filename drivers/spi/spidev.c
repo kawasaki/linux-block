@@ -154,27 +154,28 @@ spidev_sync_read(struct spidev_data *spidev, size_t len)
 
 /* Read-only message with current device setup */
 static ssize_t
-spidev_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
+spidev_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct spidev_data	*spidev;
 	ssize_t			status;
+	size_t			count = iov_iter_count(to);
 
 	/* chipselect only toggles at start or end of operation */
 	if (count > bufsiz)
 		return -EMSGSIZE;
 
-	spidev = filp->private_data;
+	spidev = iocb->ki_filp->private_data;
 
 	mutex_lock(&spidev->buf_lock);
 	status = spidev_sync_read(spidev, count);
 	if (status > 0) {
-		unsigned long	missing;
+		unsigned long	copied;
 
-		missing = copy_to_user(buf, spidev->rx_buffer, status);
-		if (missing == status)
+		copied = copy_to_iter(spidev->rx_buffer, status, to);
+		if (!copied)
 			status = -EFAULT;
 		else
-			status = status - missing;
+			status = status - copied;
 	}
 	mutex_unlock(&spidev->buf_lock);
 
@@ -183,25 +184,25 @@ spidev_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 
 /* Write-only message with current device setup */
 static ssize_t
-spidev_write(struct file *filp, const char __user *buf,
-		size_t count, loff_t *f_pos)
+spidev_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct spidev_data	*spidev;
 	ssize_t			status;
-	unsigned long		missing;
+	unsigned long		copied;
+	size_t			count = iov_iter_count(from);
 
 	/* chipselect only toggles at start or end of operation */
 	if (count > bufsiz)
 		return -EMSGSIZE;
 
-	spidev = filp->private_data;
+	spidev = iocb->ki_filp->private_data;
 
 	mutex_lock(&spidev->buf_lock);
-	missing = copy_from_user(spidev->tx_buffer, buf, count);
-	if (missing == 0)
-		status = spidev_sync_write(spidev, count);
-	else
+	copied = copy_from_iter(spidev->tx_buffer, count, from);
+	if (copied == 0)
 		status = -EFAULT;
+	else
+		status = spidev_sync_write(spidev, count);
 	mutex_unlock(&spidev->buf_lock);
 
 	return status;
@@ -679,8 +680,8 @@ static const struct file_operations spidev_fops = {
 	 * gets more complete API coverage.  It'll simplify things
 	 * too, except for the locking.
 	 */
-	.write =	spidev_write,
-	.read =		spidev_read,
+	.write_iter =	spidev_write,
+	.read_iter =	spidev_read,
 	.unlocked_ioctl = spidev_ioctl,
 	.compat_ioctl = spidev_compat_ioctl,
 	.open =		spidev_open,
