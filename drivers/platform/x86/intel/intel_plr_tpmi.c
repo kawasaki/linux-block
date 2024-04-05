@@ -221,15 +221,15 @@ static int plr_status_show(struct seq_file *s, void *unused)
 	return 0;
 }
 
-static ssize_t plr_status_write(struct file *filp, const char __user *ubuf,
-				size_t count, loff_t *ppos)
+static ssize_t plr_status_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *s = filp->private_data;
+	struct seq_file *s = iocb->ki_filp->private_data;
 	struct tpmi_plr_die *plr_die = s->private;
+	size_t count = iov_iter_count(from);
 	bool val;
 	int ret;
 
-	ret = kstrtobool_from_user(ubuf, count, &val);
+	ret = kstrtobool_from_iter(from, count, &val);
 	if (ret)
 		return ret;
 

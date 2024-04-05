@@ -4095,6 +4095,7 @@ static ssize_t sonypi_misc_read(struct file *file, char __user *buf,
 
 	return ret;
 }
+FOPS_READ_ITER_HELPER(sonypi_misc_read);
 
 static __poll_t sonypi_misc_poll(struct file *file, poll_table *wait)
 {
@@ -4247,7 +4248,7 @@ static long sonypi_misc_ioctl(struct file *fp, unsigned int cmd,
 
 static const struct file_operations sonypi_misc_fops = {
 	.owner		= THIS_MODULE,
-	.read		= sonypi_misc_read,
+	.read_iter	= sonypi_misc_read_iter,
 	.poll		= sonypi_misc_poll,
 	.open		= sonypi_misc_open,
 	.release	= sonypi_misc_release,

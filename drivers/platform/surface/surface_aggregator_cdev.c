@@ -637,6 +637,7 @@ static ssize_t ssam_cdev_read(struct file *file, char __user *buf, size_t count,
 	up_read(&cdev->lock);
 	return copied;
 }
+FOPS_READ_ITER_HELPER(ssam_cdev_read);
 
 static __poll_t ssam_cdev_poll(struct file *file, struct poll_table_struct *pt)
 {
@@ -665,7 +666,7 @@ static const struct file_operations ssam_controller_fops = {
 	.owner          = THIS_MODULE,
 	.open           = ssam_cdev_device_open,
 	.release        = ssam_cdev_device_release,
-	.read           = ssam_cdev_read,
+	.read_iter      = ssam_cdev_read_iter,
 	.poll           = ssam_cdev_poll,
 	.fasync         = ssam_cdev_fasync,
 	.unlocked_ioctl = ssam_cdev_device_ioctl,

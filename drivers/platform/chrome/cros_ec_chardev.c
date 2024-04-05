@@ -198,13 +198,13 @@ static __poll_t cros_ec_chardev_poll(struct file *filp, poll_table *wait)
 	return EPOLLIN | EPOLLRDNORM;
 }
 
-static ssize_t cros_ec_chardev_read(struct file *filp, char __user *buffer,
-				     size_t length, loff_t *offset)
+static ssize_t cros_ec_chardev_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	char msg[sizeof(struct ec_response_get_version) +
 		 sizeof(CROS_EC_DEV_VERSION)];
-	struct chardev_priv *priv = filp->private_data;
+	struct chardev_priv *priv = iocb->ki_filp->private_data;
 	struct cros_ec_dev *ec_dev = priv->ec_dev;
+	size_t length = iov_iter_count(to);
 	size_t count;
 	int ret;
 
@@ -212,7 +212,7 @@ static ssize_t cros_ec_chardev_read(struct file *filp, char __user *buffer,
 		struct ec_event *event;
 
 		event = cros_ec_chardev_fetch_event(priv, length != 0,
-						!(filp->f_flags & O_NONBLOCK));
+					!(iocb->ki_filp->f_flags & O_NONBLOCK));
 		if (IS_ERR(event))
 			return PTR_ERR(event);
 		/*
@@ -224,18 +224,18 @@ static ssize_t cros_ec_chardev_read(struct file *filp, char __user *buffer,
 
 		/* The event is 1 byte of type plus the payload */
 		count = min(length, event->size + 1);
-		ret = copy_to_user(buffer, &event->event_type, count);
+		ret = !copy_to_iter_full(&event->event_type, count, to);
 		kfree(event);
 		if (ret) /* the copy failed */
 			return -EFAULT;
-		*offset = count;
+		iocb->ki_pos = count;
 		return count;
 	}
 
 	/*
 	 * Legacy behavior if no event mask is defined
 	 */
-	if (*offset != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	ret = ec_get_version(ec_dev, msg, sizeof(msg));
@@ -244,10 +244,10 @@ static ssize_t cros_ec_chardev_read(struct file *filp, char __user *buffer,
 
 	count = min(length, strlen(msg));
 
-	if (copy_to_user(buffer, msg, count))
+	if (!copy_to_iter_full(msg, count, to))
 		return -EFAULT;
 
-	*offset = count;
+	iocb->ki_pos = count;
 	return count;
 }
 
@@ -367,7 +367,7 @@ static long cros_ec_chardev_ioctl(struct file *filp, unsigned int cmd,
 static const struct file_operations chardev_fops = {
 	.open		= cros_ec_chardev_open,
 	.poll		= cros_ec_chardev_poll,
-	.read		= cros_ec_chardev_read,
+	.read_iter	= cros_ec_chardev_read,
 	.release	= cros_ec_chardev_release,
 	.unlocked_ioctl	= cros_ec_chardev_ioctl,
 #ifdef CONFIG_COMPAT

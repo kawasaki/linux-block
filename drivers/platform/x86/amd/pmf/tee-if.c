@@ -336,10 +336,10 @@ static void amd_pmf_hex_dump_pb(struct amd_pmf_dev *dev)
 			     dev->policy_sz, false);
 }
 
-static ssize_t amd_pmf_get_pb_data(struct file *filp, const char __user *buf,
-				   size_t length, loff_t *pos)
+static ssize_t amd_pmf_get_pb_data(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct amd_pmf_dev *dev = filp->private_data;
+	struct amd_pmf_dev *dev = iocb->ki_filp->private_data;
+	size_t length = iov_iter_count(from);
 	unsigned char *new_policy_buf;
 	int ret;
 
@@ -348,7 +348,7 @@ static ssize_t amd_pmf_get_pb_data(struct file *filp, const char __user *buf,
 		return -EINVAL;
 
 	/* re-alloc to the new buffer length of the policy binary */
-	new_policy_buf = memdup_user(buf, length);
+	new_policy_buf = iterdup(from, length);
 	if (IS_ERR(new_policy_buf))
 		return PTR_ERR(new_policy_buf);
 
@@ -365,7 +365,7 @@ static ssize_t amd_pmf_get_pb_data(struct file *filp, const char __user *buf,
 }
 
 static const struct file_operations pb_fops = {
-	.write = amd_pmf_get_pb_data,
+	.write_iter = amd_pmf_get_pb_data,
 	.open = simple_open,
 };
 

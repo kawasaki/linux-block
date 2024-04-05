@@ -133,17 +133,17 @@ static int cros_ec_console_log_open(struct inode *inode, struct file *file)
 	return stream_open(inode, file);
 }
 
-static ssize_t cros_ec_console_log_read(struct file *file, char __user *buf,
-					size_t count, loff_t *ppos)
+static ssize_t cros_ec_console_log_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct cros_ec_debugfs *debug_info = file->private_data;
+	struct cros_ec_debugfs *debug_info = iocb->ki_filp->private_data;
 	struct circ_buf *cb = &debug_info->log_buffer;
+	size_t count = iov_iter_count(to);
 	ssize_t ret;
 
 	mutex_lock(&debug_info->log_mutex);
 
 	while (!CIRC_CNT(cb->head, cb->tail, LOG_SIZE)) {
-		if (file->f_flags & O_NONBLOCK) {
+		if (iocb->ki_filp->f_flags & O_NONBLOCK) {
 			ret = -EAGAIN;
 			goto error;
 		}
@@ -164,7 +164,7 @@ static ssize_t cros_ec_console_log_read(struct file *file, char __user *buf,
 	ret = min_t(size_t, CIRC_CNT_TO_END(cb->head, cb->tail, LOG_SIZE),
 		    count);
 
-	if (copy_to_user(buf, cb->buf + cb->tail, ret)) {
+	if (!copy_to_iter_full(cb->buf + cb->tail, ret, to)) {
 		ret = -EFAULT;
 		goto error;
 	}
@@ -199,13 +199,10 @@ static int cros_ec_console_log_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t cros_ec_pdinfo_read(struct file *file,
-				   char __user *user_buf,
-				   size_t count,
-				   loff_t *ppos)
+static ssize_t cros_ec_pdinfo_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	char read_buf[EC_USB_PD_MAX_PORTS * 40], *p = read_buf;
-	struct cros_ec_debugfs *debug_info = file->private_data;
+	struct cros_ec_debugfs *debug_info = iocb->ki_filp->private_data;
 	struct cros_ec_device *ec_dev = debug_info->ec->ec_dev;
 	struct {
 		struct cros_ec_command msg;
@@ -247,8 +244,7 @@ static ssize_t cros_ec_pdinfo_read(struct file *file,
 			       resp->polarity);
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos,
-				       read_buf, p - read_buf);
+	return simple_copy_to_iter(read_buf, &iocb->ki_pos, p - read_buf, to);
 }
 
 static bool cros_ec_uptime_is_supported(struct cros_ec_device *ec_dev)
@@ -270,10 +266,9 @@ static bool cros_ec_uptime_is_supported(struct cros_ec_device *ec_dev)
 	return true;
 }
 
-static ssize_t cros_ec_uptime_read(struct file *file, char __user *user_buf,
-				   size_t count, loff_t *ppos)
+static ssize_t cros_ec_uptime_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct cros_ec_debugfs *debug_info = file->private_data;
+	struct cros_ec_debugfs *debug_info = iocb->ki_filp->private_data;
 	struct cros_ec_device *ec_dev = debug_info->ec->ec_dev;
 	struct {
 		struct cros_ec_command cmd;
@@ -295,13 +290,13 @@ static ssize_t cros_ec_uptime_read(struct file *file, char __user *user_buf,
 	ret = scnprintf(read_buf, sizeof(read_buf), "%u\n",
 			resp->time_since_ec_boot_ms);
 
-	return simple_read_from_buffer(user_buf, count, ppos, read_buf, ret);
+	return simple_copy_to_iter(read_buf, &iocb->ki_pos, ret, to);
 }
 
 static const struct file_operations cros_ec_console_log_fops = {
 	.owner = THIS_MODULE,
 	.open = cros_ec_console_log_open,
-	.read = cros_ec_console_log_read,
+	.read_iter = cros_ec_console_log_read,
 	.poll = cros_ec_console_log_poll,
 	.release = cros_ec_console_log_release,
 };
@@ -309,14 +304,14 @@ static const struct file_operations cros_ec_console_log_fops = {
 static const struct file_operations cros_ec_pdinfo_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.read = cros_ec_pdinfo_read,
+	.read_iter = cros_ec_pdinfo_read,
 	.llseek = default_llseek,
 };
 
 static const struct file_operations cros_ec_uptime_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.read = cros_ec_uptime_read,
+	.read_iter = cros_ec_uptime_read,
 	.llseek = default_llseek,
 };
 

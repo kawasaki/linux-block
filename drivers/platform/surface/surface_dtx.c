@@ -522,6 +522,7 @@ static ssize_t surface_dtx_read(struct file *file, char __user *buf, size_t coun
 	up_read(&ddev->lock);
 	return copied;
 }
+FOPS_READ_ITER_HELPER(surface_dtx_read);
 
 static __poll_t surface_dtx_poll(struct file *file, struct poll_table_struct *pt)
 {
@@ -550,7 +551,7 @@ static const struct file_operations surface_dtx_fops = {
 	.owner          = THIS_MODULE,
 	.open           = surface_dtx_open,
 	.release        = surface_dtx_release,
-	.read           = surface_dtx_read,
+	.read_iter      = surface_dtx_read_iter,
 	.poll           = surface_dtx_poll,
 	.fasync         = surface_dtx_fasync,
 	.unlocked_ioctl = surface_dtx_ioctl,
