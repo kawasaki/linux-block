@@ -72,7 +72,7 @@ static int bootlog_fops_open(struct inode *inode, struct file *file)
 static const struct file_operations bootlog_fops = {
 	.owner = THIS_MODULE,
 	.open = bootlog_fops_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
@@ -93,7 +93,7 @@ static int fifo_size_open(struct inode *inode, struct file *file)
 static const struct file_operations fifo_size_fops = {
 	.owner = THIS_MODULE,
 	.open = fifo_size_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
@@ -123,7 +123,7 @@ static int queued_open(struct inode *inode, struct file *file)
 static const struct file_operations queued_fops = {
 	.owner = THIS_MODULE,
 	.open = queued_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };

@@ -118,15 +118,15 @@ static const struct drm_debugfs_info vdev_debugfs_list[] = {
 	{"reset_pending", reset_pending_show, 0},
 };
 
-static ssize_t
-dvfs_mode_fops_write(struct file *file, const char __user *user_buf, size_t size, loff_t *pos)
+static ssize_t dvfs_mode_fops_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ivpu_device *vdev = file->private_data;
+	struct ivpu_device *vdev = iocb->ki_filp->private_data;
+	size_t size = iov_iter_count(from);
 	struct ivpu_fw_info *fw = vdev->fw;
 	u32 dvfs_mode;
 	int ret;
 
-	ret = kstrtou32_from_user(user_buf, size, 0, &dvfs_mode);
+	ret = kstrtou32_from_iter(from, size, 0, &dvfs_mode);
 	if (ret < 0)
 		return ret;
 
@@ -142,7 +142,7 @@ dvfs_mode_fops_write(struct file *file, const char __user *user_buf, size_t size
 static const struct file_operations dvfs_mode_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = dvfs_mode_fops_write,
+	.write_iter = dvfs_mode_fops_write,
 };
 
 static ssize_t
@@ -162,11 +162,12 @@ fw_dyndbg_fops_write(struct file *file, const char __user *user_buf, size_t size
 	ivpu_jsm_dyndbg_control(vdev, buffer, size);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(fw_dyndbg_fops_write);
 
 static const struct file_operations fw_dyndbg_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = fw_dyndbg_fops_write,
+	.write_iter = fw_dyndbg_fops_write_iter,
 };
 
 static int fw_log_show(struct seq_file *s, void *v)
@@ -183,37 +184,36 @@ static int fw_log_fops_open(struct inode *inode, struct file *file)
 	return single_open(file, fw_log_show, inode->i_private);
 }
 
-static ssize_t
-fw_log_fops_write(struct file *file, const char __user *user_buf, size_t size, loff_t *pos)
+static ssize_t fw_log_fops_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *s = file->private_data;
+	struct seq_file *s = iocb->ki_filp->private_data;
 	struct ivpu_device *vdev = s->private;
 
-	if (!size)
+	if (!iov_iter_count(from))
 		return -EINVAL;
 
 	ivpu_fw_log_clear(vdev);
-	return size;
+	return iov_iter_count(from);
 }
 
 static const struct file_operations fw_log_fops = {
 	.owner = THIS_MODULE,
 	.open = fw_log_fops_open,
-	.write = fw_log_fops_write,
-	.read = seq_read,
+	.write_iter = fw_log_fops_write,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
 
 static ssize_t
-fw_profiling_freq_fops_write(struct file *file, const char __user *user_buf,
-			     size_t size, loff_t *pos)
+fw_profiling_freq_fops_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ivpu_device *vdev = file->private_data;
+	struct ivpu_device *vdev = iocb->ki_filp->private_data;
+	size_t size = iov_iter_count(from);
 	bool enable;
 	int ret;
 
-	ret = kstrtobool_from_user(user_buf, size, &enable);
+	ret = kstrtobool_from_iter(from, size, &enable);
 	if (ret < 0)
 		return ret;
 
@@ -229,19 +229,19 @@ fw_profiling_freq_fops_write(struct file *file, const char __user *user_buf,
 static const struct file_operations fw_profiling_freq_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = fw_profiling_freq_fops_write,
+	.write_iter = fw_profiling_freq_fops_write,
 };
 
 static ssize_t
-fw_trace_destination_mask_fops_write(struct file *file, const char __user *user_buf,
-				     size_t size, loff_t *pos)
+fw_trace_destination_mask_fops_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ivpu_device *vdev = file->private_data;
+	struct ivpu_device *vdev = iocb->ki_filp->private_data;
+	size_t size = iov_iter_count(from);
 	struct ivpu_fw_info *fw = vdev->fw;
 	u32 trace_destination_mask;
 	int ret;
 
-	ret = kstrtou32_from_user(user_buf, size, 0, &trace_destination_mask);
+	ret = kstrtou32_from_iter(from, size, 0, &trace_destination_mask);
 	if (ret < 0)
 		return ret;
 
@@ -256,19 +256,19 @@ fw_trace_destination_mask_fops_write(struct file *file, const char __user *user_
 static const struct file_operations fw_trace_destination_mask_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = fw_trace_destination_mask_fops_write,
+	.write_iter = fw_trace_destination_mask_fops_write,
 };
 
 static ssize_t
-fw_trace_hw_comp_mask_fops_write(struct file *file, const char __user *user_buf,
-				 size_t size, loff_t *pos)
+fw_trace_hw_comp_mask_fops_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ivpu_device *vdev = file->private_data;
+	struct ivpu_device *vdev = iocb->ki_filp->private_data;
+	size_t size = iov_iter_count(from);
 	struct ivpu_fw_info *fw = vdev->fw;
 	u64 trace_hw_component_mask;
 	int ret;
 
-	ret = kstrtou64_from_user(user_buf, size, 0, &trace_hw_component_mask);
+	ret = kstrtou64_from_iter(from, size, 0, &trace_hw_component_mask);
 	if (ret < 0)
 		return ret;
 
@@ -283,18 +283,19 @@ fw_trace_hw_comp_mask_fops_write(struct file *file, const char __user *user_buf,
 static const struct file_operations fw_trace_hw_comp_mask_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = fw_trace_hw_comp_mask_fops_write,
+	.write_iter = fw_trace_hw_comp_mask_fops_write,
 };
 
 static ssize_t
-fw_trace_level_fops_write(struct file *file, const char __user *user_buf, size_t size, loff_t *pos)
+fw_trace_level_fops_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ivpu_device *vdev = file->private_data;
+	struct ivpu_device *vdev = iocb->ki_filp->private_data;
+	size_t size = iov_iter_count(from);
 	struct ivpu_fw_info *fw = vdev->fw;
 	u32 trace_level;
 	int ret;
 
-	ret = kstrtou32_from_user(user_buf, size, 0, &trace_level);
+	ret = kstrtou32_from_iter(from, size, 0, &trace_level);
 	if (ret < 0)
 		return ret;
 
@@ -309,16 +310,15 @@ fw_trace_level_fops_write(struct file *file, const char __user *user_buf, size_t
 static const struct file_operations fw_trace_level_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = fw_trace_level_fops_write,
+	.write_iter = fw_trace_level_fops_write,
 };
 
-static ssize_t
-ivpu_force_recovery_fn(struct file *file, const char __user *user_buf, size_t size, loff_t *pos)
+static ssize_t ivpu_force_recovery_fn(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ivpu_device *vdev = file->private_data;
+	struct ivpu_device *vdev = iocb->ki_filp->private_data;
 	int ret;
 
-	if (!size)
+	if (!iov_iter_count(from))
 		return -EINVAL;
 
 	ret = ivpu_rpm_get(vdev);
@@ -328,21 +328,20 @@ ivpu_force_recovery_fn(struct file *file, const char __user *user_buf, size_t si
 	ivpu_pm_trigger_recovery(vdev, "debugfs");
 	flush_work(&vdev->pm->recovery_work);
 	ivpu_rpm_put(vdev);
-	return size;
+	return iov_iter_count(from);
 }
 
 static const struct file_operations ivpu_force_recovery_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = ivpu_force_recovery_fn,
+	.write_iter = ivpu_force_recovery_fn,
 };
 
-static ssize_t
-ivpu_reset_engine_fn(struct file *file, const char __user *user_buf, size_t size, loff_t *pos)
+static ssize_t ivpu_reset_engine_fn(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ivpu_device *vdev = file->private_data;
+	struct ivpu_device *vdev = iocb->ki_filp->private_data;
 
-	if (!size)
+	if (!iov_iter_count(from))
 		return -EINVAL;
 
 	if (ivpu_jsm_reset_engine(vdev, DRM_IVPU_ENGINE_COMPUTE))
@@ -350,19 +349,19 @@ ivpu_reset_engine_fn(struct file *file, const char __user *user_buf, size_t size
 	if (ivpu_jsm_reset_engine(vdev, DRM_IVPU_ENGINE_COPY))
 		return -ENODEV;
 
-	return size;
+	return iov_iter_count(from);
 }
 
 static const struct file_operations ivpu_reset_engine_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = ivpu_reset_engine_fn,
+	.write_iter = ivpu_reset_engine_fn,
 };
 
-static ssize_t
-ivpu_resume_engine_fn(struct file *file, const char __user *user_buf, size_t size, loff_t *pos)
+static ssize_t ivpu_resume_engine_fn(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ivpu_device *vdev = file->private_data;
+	struct ivpu_device *vdev = iocb->ki_filp->private_data;
+	size_t size = iov_iter_count(from);
 
 	if (!size)
 		return -EINVAL;
@@ -378,7 +377,7 @@ ivpu_resume_engine_fn(struct file *file, const char __user *user_buf, size_t siz
 static const struct file_operations ivpu_resume_engine_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = ivpu_resume_engine_fn,
+	.write_iter = ivpu_resume_engine_fn,
 };
 
 static int dct_active_get(void *data, u64 *active_percent)
