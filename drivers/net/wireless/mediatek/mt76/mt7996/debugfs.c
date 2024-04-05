@@ -47,11 +47,10 @@ DEFINE_DEBUGFS_ATTRIBUTE(fops_implicit_txbf, mt7996_implicit_txbf_get,
 			 mt7996_implicit_txbf_set, "%lld\n");
 
 /* test knob of system error recovery */
-static ssize_t
-mt7996_sys_recovery_set(struct file *file, const char __user *user_buf,
-			size_t count, loff_t *ppos)
+static ssize_t mt7996_sys_recovery_set(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct mt7996_phy *phy = file->private_data;
+	struct mt7996_phy *phy = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct mt7996_dev *dev = phy->dev;
 	bool band = phy->mt76->band_idx;
 	char buf[16];
@@ -61,7 +60,7 @@ mt7996_sys_recovery_set(struct file *file, const char __user *user_buf,
 	if (count >= sizeof(buf))
 		return -EINVAL;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	if (count && buf[count - 1] == '\n')
@@ -122,11 +121,9 @@ mt7996_sys_recovery_set(struct file *file, const char __user *user_buf,
 	return ret ? ret : count;
 }
 
-static ssize_t
-mt7996_sys_recovery_get(struct file *file, char __user *user_buf,
-			size_t count, loff_t *ppos)
+static ssize_t mt7996_sys_recovery_get(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct mt7996_phy *phy = file->private_data;
+	struct mt7996_phy *phy = iocb->ki_filp->private_data;
 	struct mt7996_dev *dev = phy->dev;
 	char *buff;
 	int desc = 0;
@@ -205,14 +202,14 @@ mt7996_sys_recovery_get(struct file *file, char __user *user_buf,
 			  dev->recovery.wm_reset_count,
 			  dev->recovery.wa_reset_count);
 
-	ret = simple_read_from_buffer(user_buf, count, ppos, buff, desc);
+	ret = simple_copy_to_iter(buff, &iocb->ki_pos, desc, to);
 	kfree(buff);
 	return ret;
 }
 
 static const struct file_operations mt7996_sys_recovery_ops = {
-	.write = mt7996_sys_recovery_set,
-	.read = mt7996_sys_recovery_get,
+	.write_iter = mt7996_sys_recovery_set,
+	.read_iter = mt7996_sys_recovery_get,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
@@ -891,15 +888,15 @@ bool mt7996_debugfs_rx_log(struct mt7996_dev *dev, const void *data, int len)
 #ifdef CONFIG_MAC80211_DEBUGFS
 /** per-station debugfs **/
 
-static ssize_t mt7996_sta_fixed_rate_set(struct file *file,
-					 const char __user *user_buf,
-					 size_t count, loff_t *ppos)
+static ssize_t mt7996_sta_fixed_rate_set(struct kiocb *iocb,
+					 struct iov_iter *from)
 {
 #define SHORT_PREAMBLE 0
 #define LONG_PREAMBLE 1
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
 	struct mt7996_sta *msta = (struct mt7996_sta *)sta->drv_priv;
 	struct mt7996_dev *dev = msta->vif->phy->dev;
+	size_t count = iov_iter_count(from);
 	struct ra_rate phy = {};
 	char buf[100];
 	int ret;
@@ -908,7 +905,7 @@ static ssize_t mt7996_sta_fixed_rate_set(struct file *file,
 	if (count >= sizeof(buf))
 		return -EINVAL;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	if (count && buf[count - 1] == '\n')
@@ -949,7 +946,7 @@ out:
 }
 
 static const struct file_operations fops_fixed_rate = {
-	.write = mt7996_sta_fixed_rate_set,
+	.write_iter = mt7996_sta_fixed_rate_set,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
