@@ -1107,8 +1107,8 @@ out:
 	return ret;
 }
 
-ssize_t proc_uid_map_write(struct file *file, const char __user *buf,
-			   size_t size, loff_t *ppos)
+static ssize_t proc_uid_map_write(struct file *file, const char __user *buf,
+				  size_t size, loff_t *ppos)
 {
 	struct seq_file *seq = file->private_data;
 	struct user_namespace *ns = seq->private;
@@ -1124,8 +1124,13 @@ ssize_t proc_uid_map_write(struct file *file, const char __user *buf,
 			 &ns->uid_map, &ns->parent->uid_map);
 }
 
-ssize_t proc_gid_map_write(struct file *file, const char __user *buf,
-			   size_t size, loff_t *ppos)
+ssize_t proc_uid_map_write_iter(struct kiocb *iocb, struct iov_iter *from)
+{
+	return vfs_write_iter(iocb, from, proc_uid_map_write);
+}
+
+static ssize_t proc_gid_map_write(struct file *file, const char __user *buf,
+				  size_t size, loff_t *ppos)
 {
 	struct seq_file *seq = file->private_data;
 	struct user_namespace *ns = seq->private;
@@ -1141,8 +1146,13 @@ ssize_t proc_gid_map_write(struct file *file, const char __user *buf,
 			 &ns->gid_map, &ns->parent->gid_map);
 }
 
-ssize_t proc_projid_map_write(struct file *file, const char __user *buf,
-			      size_t size, loff_t *ppos)
+ssize_t proc_gid_map_write_iter(struct kiocb *iocb, struct iov_iter *from)
+{
+	return vfs_write_iter(iocb, from, proc_gid_map_write);
+}
+
+static ssize_t proc_projid_map_write(struct file *file, const char __user *buf,
+				     size_t size, loff_t *ppos)
 {
 	struct seq_file *seq = file->private_data;
 	struct user_namespace *ns = seq->private;
@@ -1157,6 +1167,11 @@ ssize_t proc_projid_map_write(struct file *file, const char __user *buf,
 	/* Anyone can set any valid project id no capability needed */
 	return map_write(file, buf, size, ppos, -1,
 			 &ns->projid_map, &ns->parent->projid_map);
+}
+
+ssize_t proc_projid_map_write_iter(struct kiocb *iocb, struct iov_iter *from)
+{
+	return vfs_write_iter(iocb, from, proc_projid_map_write);
 }
 
 static bool new_idmap_permitted(const struct file *file,
@@ -1212,23 +1227,23 @@ int proc_setgroups_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-ssize_t proc_setgroups_write(struct file *file, const char __user *buf,
-			     size_t count, loff_t *ppos)
+ssize_t proc_setgroups_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *seq = file->private_data;
+	struct seq_file *seq = iocb->ki_filp->private_data;
 	struct user_namespace *ns = seq->private;
+	size_t count = iov_iter_count(from);
 	char kbuf[8], *pos;
 	bool setgroups_allowed;
 	ssize_t ret;
 
 	/* Only allow a very narrow range of strings to be written */
 	ret = -EINVAL;
-	if ((*ppos != 0) || (count >= sizeof(kbuf)))
+	if ((iocb->ki_pos != 0) || (count >= sizeof(kbuf)))
 		goto out;
 
 	/* What was written? */
 	ret = -EFAULT;
-	if (copy_from_user(kbuf, buf, count))
+	if (!copy_from_iter_full(kbuf, count, from))
 		goto out;
 	kbuf[count] = '\0';
 	pos = kbuf;
@@ -1270,7 +1285,7 @@ ssize_t proc_setgroups_write(struct file *file, const char __user *buf,
 	mutex_unlock(&userns_state_mutex);
 
 	/* Report a successful write */
-	*ppos = count;
+	iocb->ki_pos = count;
 	ret = count;
 out:
 	return ret;
