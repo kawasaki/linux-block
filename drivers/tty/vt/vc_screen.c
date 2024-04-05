@@ -361,10 +361,10 @@ static unsigned int vcs_read_buf(const struct vc_data *vc, char *con_buf,
 	return filled;
 }
 
-static ssize_t
-vcs_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
+static ssize_t vcs_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct inode *inode = file_inode(file);
+	struct inode *inode = file_inode(iocb->ki_filp);
+	size_t count = iov_iter_count(to);
 	struct vc_data *vc;
 	struct vcs_poll_data *poll;
 	unsigned int read;
@@ -377,7 +377,7 @@ vcs_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 	if (!con_buf)
 		return -ENOMEM;
 
-	pos = *ppos;
+	pos = iocb->ki_pos;
 
 	/* Select the proper current console and verify
 	 * sanity of the situation under the console lock.
@@ -394,7 +394,7 @@ vcs_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 	if (uni_mode && (pos | count) & 3)
 		goto unlock_out;
 
-	poll = file->private_data;
+	poll = iocb->ki_filp->private_data;
 	if (count && poll)
 		poll->event = 0;
 	read = 0;
@@ -453,7 +453,7 @@ vcs_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 		 */
 
 		console_unlock();
-		ret = copy_to_user(buf, con_buf + skip, this_round);
+		ret = !copy_to_iter_full(con_buf + skip, this_round, to);
 		console_lock();
 
 		if (ret) {
@@ -461,12 +461,11 @@ vcs_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 			ret = -EFAULT;
 			break;
 		}
-		buf += this_round;
 		pos += this_round;
 		read += this_round;
 		count -= this_round;
 	}
-	*ppos += read;
+	iocb->ki_pos += read;
 	if (read)
 		ret = read;
 unlock_out:
@@ -586,10 +585,10 @@ static u16 *vcs_write_buf(struct vc_data *vc, const char *con_buf,
 	return org;
 }
 
-static ssize_t
-vcs_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+static ssize_t vcs_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct inode *inode = file_inode(file);
+	struct inode *inode = file_inode(iocb->ki_filp);
+	size_t count = iov_iter_count(from);
 	struct vc_data *vc;
 	char *con_buf;
 	u16 *org0, *org;
@@ -606,7 +605,7 @@ vcs_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 	if (!con_buf)
 		return -ENOMEM;
 
-	pos = *ppos;
+	pos = iocb->ki_pos;
 
 	/* Select the proper current console and verify
 	 * sanity of the situation under the console lock.
@@ -640,7 +639,7 @@ vcs_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 		 * in the write data from userspace safely.
 		 */
 		console_unlock();
-		ret = copy_from_user(con_buf, buf, this_round);
+		ret = !copy_from_iter_full(con_buf, this_round, from);
 		console_lock();
 
 		if (ret) {
@@ -692,12 +691,11 @@ vcs_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 
 		count -= this_round;
 		written += this_round;
-		buf += this_round;
 		pos += this_round;
 		if (org)
 			update_region(vc, (unsigned long)(org0), org - org0);
 	}
-	*ppos += written;
+	iocb->ki_pos += written;
 	ret = written;
 	if (written)
 		vcs_scr_updated(vc);
@@ -778,8 +776,8 @@ static int vcs_release(struct inode *inode, struct file *file)
 
 static const struct file_operations vcs_fops = {
 	.llseek		= vcs_lseek,
-	.read		= vcs_read,
-	.write		= vcs_write,
+	.read_iter	= vcs_read,
+	.write_iter	= vcs_write,
 	.poll		= vcs_poll,
 	.fasync		= vcs_fasync,
 	.open		= vcs_open,
