@@ -6,7 +6,7 @@
  */
 #define MVM_DEBUGFS_READ_FILE_OPS(name)					\
 static const struct file_operations iwl_dbgfs_##name##_ops = {		\
-	.read = iwl_dbgfs_##name##_read,				\
+	.read_iter = iwl_dbgfs_##name##_read_iter,			\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 }
@@ -25,12 +25,13 @@ static ssize_t _iwl_dbgfs_##name##_write(struct file *file,		\
 									\
 	return iwl_dbgfs_##name##_write(arg, buf, buf_size, ppos);	\
 }									\
+FOPS_WRITE_ITER_HELPER(_iwl_dbgfs_##name##_write);			\
 
 #define _MVM_DEBUGFS_READ_WRITE_FILE_OPS(name, buflen, argtype)		\
 MVM_DEBUGFS_WRITE_WRAPPER(name, buflen, argtype)			\
 static const struct file_operations iwl_dbgfs_##name##_ops = {		\
-	.write = _iwl_dbgfs_##name##_write,				\
-	.read = iwl_dbgfs_##name##_read,				\
+	.write_iter = _iwl_dbgfs_##name##_write_iter,			\
+	.read_iter = iwl_dbgfs_##name##_read_iter,			\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 };
@@ -38,7 +39,7 @@ static const struct file_operations iwl_dbgfs_##name##_ops = {		\
 #define _MVM_DEBUGFS_WRITE_FILE_OPS(name, buflen, argtype)		\
 MVM_DEBUGFS_WRITE_WRAPPER(name, buflen, argtype)			\
 static const struct file_operations iwl_dbgfs_##name##_ops = {		\
-	.write = _iwl_dbgfs_##name##_write,				\
+	.write_iter = _iwl_dbgfs_##name##_write_iter,			\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 };

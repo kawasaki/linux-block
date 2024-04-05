@@ -19,11 +19,10 @@
 #include "fw/error-dump.h"
 #include "fw/api/phy-ctxt.h"
 
-static ssize_t iwl_dbgfs_ctdp_budget_read(struct file *file,
-					  char __user *user_buf,
-					  size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_ctdp_budget_read_iter(struct kiocb *iocb,
+					       struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	char buf[16];
 	int pos, budget;
 
@@ -43,7 +42,7 @@ static ssize_t iwl_dbgfs_ctdp_budget_read(struct file *file,
 
 	pos = scnprintf(buf, sizeof(buf), "%d\n", budget);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 static ssize_t iwl_dbgfs_stop_ctdp_write(struct iwl_mvm *mvm, char *buf,
@@ -151,10 +150,9 @@ static ssize_t iwl_dbgfs_tx_flush_write(struct iwl_mvm *mvm, char *buf,
 	return ret;
 }
 
-static ssize_t iwl_dbgfs_sram_read(struct file *file, char __user *user_buf,
-				   size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_sram_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	const struct fw_img *img;
 	unsigned int ofs, len;
 	size_t ret;
@@ -179,7 +177,7 @@ static ssize_t iwl_dbgfs_sram_read(struct file *file, char __user *user_buf,
 
 	iwl_trans_read_mem_bytes(mvm->trans, ofs, ptr, len);
 
-	ret = simple_read_from_buffer(user_buf, count, ppos, ptr, len);
+	ret = simple_copy_to_iter(ptr, &iocb->ki_pos, len, to);
 
 	kfree(ptr);
 
@@ -217,11 +215,10 @@ static ssize_t iwl_dbgfs_sram_write(struct iwl_mvm *mvm, char *buf,
 	return count;
 }
 
-static ssize_t iwl_dbgfs_set_nic_temperature_read(struct file *file,
-						  char __user *user_buf,
-						  size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_set_nic_temperature_read_iter(struct kiocb *iocb,
+						       struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	char buf[16];
 	int pos;
 
@@ -230,7 +227,7 @@ static ssize_t iwl_dbgfs_set_nic_temperature_read(struct file *file,
 	else
 		pos = scnprintf(buf, sizeof(buf), "%d\n", mvm->temperature);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 /*
@@ -284,11 +281,10 @@ out:
 	return count;
 }
 
-static ssize_t iwl_dbgfs_nic_temp_read(struct file *file,
-				       char __user *user_buf,
-				       size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_nic_temp_read_iter(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	char buf[16];
 	int pos, ret;
 	s32 temp;
@@ -305,15 +301,14 @@ static ssize_t iwl_dbgfs_nic_temp_read(struct file *file,
 
 	pos = scnprintf(buf, sizeof(buf), "%d\n", temp);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 #ifdef CONFIG_ACPI
-static ssize_t iwl_dbgfs_sar_geo_profile_read(struct file *file,
-					      char __user *user_buf,
-					      size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_sar_geo_profile_read_iter(struct kiocb *iocb,
+						   struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	char buf[256];
 	int pos = 0;
 	int bufsz = sizeof(buf);
@@ -348,14 +343,13 @@ static ssize_t iwl_dbgfs_sar_geo_profile_read(struct file *file,
 	}
 	mutex_unlock(&mvm->mutex);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
-static ssize_t iwl_dbgfs_wifi_6e_enable_read(struct file *file,
-					     char __user *user_buf,
-					     size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_wifi_6e_enable_read_iter(struct kiocb *iocb,
+						  struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	int err, pos;
 	char buf[12];
 	u32 value;
@@ -366,14 +360,14 @@ static ssize_t iwl_dbgfs_wifi_6e_enable_read(struct file *file,
 
 	pos = sprintf(buf, "0x%08x\n", value);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 #endif
 
-static ssize_t iwl_dbgfs_stations_read(struct file *file, char __user *user_buf,
-				       size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_stations_read_iter(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	struct ieee80211_sta *sta;
 	char buf[400];
 	int i, pos = 0, bufsz = sizeof(buf);
@@ -396,7 +390,7 @@ static ssize_t iwl_dbgfs_stations_read(struct file *file, char __user *user_buf,
 
 	mutex_unlock(&mvm->mutex);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 static ssize_t iwl_dbgfs_rs_data_read(struct ieee80211_link_sta *link_sta,
@@ -493,11 +487,10 @@ static ssize_t iwl_dbgfs_amsdu_len_read(struct ieee80211_link_sta *link_sta,
 	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
 }
 
-static ssize_t iwl_dbgfs_disable_power_off_read(struct file *file,
-						char __user *user_buf,
-						size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_disable_power_off_read_iter(struct kiocb *iocb,
+						     struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	char buf[64];
 	int bufsz = sizeof(buf);
 	int pos = 0;
@@ -507,7 +500,7 @@ static ssize_t iwl_dbgfs_disable_power_off_read(struct file *file,
 	pos += scnprintf(buf+pos, bufsz-pos, "disable_power_off_d3=%d\n",
 			 mvm->disable_power_off_d3);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 static ssize_t iwl_dbgfs_disable_power_off_write(struct iwl_mvm *mvm, char *buf,
@@ -537,10 +530,9 @@ static ssize_t iwl_dbgfs_disable_power_off_write(struct iwl_mvm *mvm, char *buf,
 	return ret ?: count;
 }
 
-static ssize_t iwl_dbgfs_fw_ver_read(struct file *file, char __user *user_buf,
-				     size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_fw_ver_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	char *buff, *pos, *endpos;
 	static const size_t bufsz = 1024;
 	int ret;
@@ -561,17 +553,16 @@ static ssize_t iwl_dbgfs_fw_ver_read(struct file *file, char __user *user_buf,
 	pos += scnprintf(pos, endpos - pos, "Bus: %s\n",
 			 mvm->fwrt.dev->bus->name);
 
-	ret = simple_read_from_buffer(user_buf, count, ppos, buff, pos - buff);
+	ret = simple_copy_to_iter(buff, &iocb->ki_pos, pos - buff, to);
 	kfree(buff);
 
 	return ret;
 }
 
-static ssize_t iwl_dbgfs_tas_get_status_read(struct file *file,
-					     char __user *user_buf,
-					     size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_tas_get_status_read_iter(struct kiocb *iocb,
+						  struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	struct iwl_mvm_tas_status_resp tas_rsp;
 	struct iwl_mvm_tas_status_resp *rsp = &tas_rsp;
 	static const size_t bufsz = 1024;
@@ -745,17 +736,16 @@ static ssize_t iwl_dbgfs_tas_get_status_read(struct file *file,
 	}
 
 out:
-	ret = simple_read_from_buffer(user_buf, count, ppos, buff, pos - buff);
+	ret = simple_copy_to_iter(buff, &iocb->ki_pos, pos - buff, to);
 	kfree(buff);
 	iwl_free_resp(&hcmd);
 	return ret;
 }
 
-static ssize_t iwl_dbgfs_phy_integration_ver_read(struct file *file,
-						  char __user *user_buf,
-						  size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_phy_integration_ver_read_iter(struct kiocb *iocb,
+						       struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	char *buf;
 	size_t bufsz;
 	int pos;
@@ -769,7 +759,7 @@ static ssize_t iwl_dbgfs_phy_integration_ver_read(struct file *file,
 	pos = scnprintf(buf, bufsz, "%.*s\n", mvm->fw->phy_integration_ver_len,
 			mvm->fw->phy_integration_ver);
 
-	ret = simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	ret = simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 
 	kfree(buf);
 	return ret;
@@ -780,11 +770,10 @@ static ssize_t iwl_dbgfs_phy_integration_ver_read(struct file *file,
 					  fmt_table, #_memb,		\
 					  le32_to_cpu(_struct->_memb))
 
-static ssize_t iwl_dbgfs_fw_rx_stats_read(struct file *file,
-					  char __user *user_buf, size_t count,
-					  loff_t *ppos)
+static ssize_t iwl_dbgfs_fw_rx_stats_read_iter(struct kiocb *iocb,
+					       struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	static const char *fmt_table = "\t%-30s %10u\n";
 	static const char *fmt_header = "%-32s\n";
 	int pos = 0;
@@ -970,16 +959,15 @@ static ssize_t iwl_dbgfs_fw_rx_stats_read(struct file *file,
 
 	mutex_unlock(&mvm->mutex);
 
-	ret = simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	ret = simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 	kfree(buf);
 
 	return ret;
 }
 #undef PRINT_STAT_LE32
 
-static ssize_t iwl_dbgfs_fw_system_stats_read(struct file *file,
-					      char __user *user_buf,
-					      size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_fw_system_stats_read_iter(struct kiocb *iocb,
+						   struct iov_iter *to)
 {
 	char *buff, *pos, *endpos;
 	int ret;
@@ -987,7 +975,7 @@ static ssize_t iwl_dbgfs_fw_system_stats_read(struct file *file,
 	int i;
 	struct iwl_mvm_vif *mvmvif;
 	struct ieee80211_vif *vif;
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	u8 cmd_ver = iwl_fw_lookup_cmd_ver(mvm->fw,
 					   WIDE_ID(SYSTEM_GROUP,
 						   SYSTEM_STATISTICS_CMD),
@@ -1066,7 +1054,7 @@ release_send_out:
 	mutex_unlock(&mvm->mutex);
 
 send_out:
-	ret = simple_read_from_buffer(user_buf, count, ppos, buff, pos - buff);
+	ret = simple_copy_to_iter(buff, &iocb->ki_pos, pos - buff, to);
 	kfree(buff);
 
 	return ret;
@@ -1148,6 +1136,7 @@ static ssize_t iwl_dbgfs_drv_rx_stats_read(struct file *file,
 	return iwl_dbgfs_frame_stats_read(mvm, user_buf, count, ppos,
 					  &mvm->drv_rx_stats);
 }
+FOPS_READ_ITER_HELPER(iwl_dbgfs_drv_rx_stats_read);
 
 static ssize_t iwl_dbgfs_fw_restart_write(struct iwl_mvm *mvm, char *buf,
 					  size_t count, loff_t *ppos)
@@ -1195,11 +1184,9 @@ static ssize_t iwl_dbgfs_fw_nmi_write(struct iwl_mvm *mvm, char *buf,
 }
 
 static ssize_t
-iwl_dbgfs_scan_ant_rxchain_read(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
+iwl_dbgfs_scan_ant_rxchain_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	int pos = 0;
 	char buf[32];
 	const size_t bufsz = sizeof(buf);
@@ -1212,7 +1199,7 @@ iwl_dbgfs_scan_ant_rxchain_read(struct file *file,
 		pos += scnprintf(buf + pos, bufsz - pos, "B");
 	pos += scnprintf(buf + pos, bufsz - pos, " (%x)\n", mvm->scan_rx_ant);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 static ssize_t
@@ -1452,11 +1439,10 @@ static ssize_t iwl_dbgfs_inject_beacon_ie_restore_write(struct iwl_mvm *mvm,
 	return ret ?: count;
 }
 
-static ssize_t iwl_dbgfs_fw_dbg_conf_read(struct file *file,
-					  char __user *user_buf,
-					  size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_fw_dbg_conf_read_iter(struct kiocb *iocb,
+					       struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	int conf;
 	char buf[8];
 	const size_t bufsz = sizeof(buf);
@@ -1468,7 +1454,7 @@ static ssize_t iwl_dbgfs_fw_dbg_conf_read(struct file *file,
 
 	pos += scnprintf(buf + pos, bufsz - pos, "%d\n", conf);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 static ssize_t iwl_dbgfs_fw_dbg_conf_write(struct iwl_mvm *mvm,
@@ -1633,6 +1619,7 @@ static ssize_t _iwl_dbgfs_link_sta_##name##_write(struct file *file,	\
 					      file,			\
 					      buf, buf_size, ppos);	\
 }									\
+FOPS_WRITE_ITER_HELPER(_iwl_dbgfs_link_sta_##name##_write);		\
 
 #define MVM_DEBUGFS_LINK_STA_READ_WRAPPER(name)		\
 static ssize_t _iwl_dbgfs_link_sta_##name##_read(struct file *file,	\
@@ -1643,11 +1630,12 @@ static ssize_t _iwl_dbgfs_link_sta_##name##_read(struct file *file,	\
 					     file,			\
 					     user_buf, count, ppos);	\
 }									\
+FOPS_READ_ITER_HELPER(_iwl_dbgfs_link_sta_##name##_read);		\
 
 #define MVM_DEBUGFS_WRITE_LINK_STA_FILE_OPS(name, bufsz)		\
 MVM_DEBUGFS_LINK_STA_WRITE_WRAPPER(name, bufsz)				\
 static const struct file_operations iwl_dbgfs_link_sta_##name##_ops = {	\
-	.write = _iwl_dbgfs_link_sta_##name##_write,			\
+	.write_iter = _iwl_dbgfs_link_sta_##name##_write,		\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 }
@@ -1655,7 +1643,7 @@ static const struct file_operations iwl_dbgfs_link_sta_##name##_ops = {	\
 #define MVM_DEBUGFS_READ_LINK_STA_FILE_OPS(name)			\
 MVM_DEBUGFS_LINK_STA_READ_WRAPPER(name)					\
 static const struct file_operations iwl_dbgfs_link_sta_##name##_ops = {	\
-	.read = _iwl_dbgfs_link_sta_##name##_read,			\
+	.read_iter = _iwl_dbgfs_link_sta_##name##_read_iter,		\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 }
@@ -1664,8 +1652,8 @@ static const struct file_operations iwl_dbgfs_link_sta_##name##_ops = {	\
 MVM_DEBUGFS_LINK_STA_READ_WRAPPER(name)					\
 MVM_DEBUGFS_LINK_STA_WRITE_WRAPPER(name, bufsz)				\
 static const struct file_operations iwl_dbgfs_link_sta_##name##_ops = {	\
-	.read = _iwl_dbgfs_link_sta_##name##_read,			\
-	.write = _iwl_dbgfs_link_sta_##name##_write,			\
+	.read_iter = _iwl_dbgfs_link_sta_##name##_read_iter,		\
+	.write_iter = _iwl_dbgfs_link_sta_##name##_write_iter,		\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 }
@@ -1676,12 +1664,10 @@ static const struct file_operations iwl_dbgfs_link_sta_##name##_ops = {	\
 #define MVM_DEBUGFS_ADD_LINK_STA_FILE(name, parent, mode) \
 	MVM_DEBUGFS_ADD_LINK_STA_FILE_ALIAS(#name, name, parent, mode)
 
-static ssize_t
-iwl_dbgfs_prph_reg_read(struct file *file,
-			char __user *user_buf,
-			size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_prph_reg_read_iter(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	int pos = 0;
 	char buf[32];
 	const size_t bufsz = sizeof(buf);
@@ -1693,7 +1679,7 @@ iwl_dbgfs_prph_reg_read(struct file *file,
 		mvm->dbgfs_prph_reg_addr,
 		iwl_read_prph(mvm->trans, mvm->dbgfs_prph_reg_addr));
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 static ssize_t
@@ -1811,10 +1797,9 @@ iwl_dbgfs_he_sniffer_params_write(struct iwl_mvm *mvm, char *buf,
 }
 
 static ssize_t
-iwl_dbgfs_he_sniffer_params_read(struct file *file, char __user *user_buf,
-				 size_t count, loff_t *ppos)
+iwl_dbgfs_he_sniffer_params_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	u8 buf[32];
 	int len;
 
@@ -1824,14 +1809,13 @@ iwl_dbgfs_he_sniffer_params_read(struct file *file, char __user *user_buf,
 			mvm->cur_bssid[1], mvm->cur_bssid[2], mvm->cur_bssid[3],
 			mvm->cur_bssid[4], mvm->cur_bssid[5]);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
 static ssize_t
-iwl_dbgfs_uapsd_noagg_bssids_read(struct file *file, char __user *user_buf,
-				  size_t count, loff_t *ppos)
+iwl_dbgfs_uapsd_noagg_bssids_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	u8 buf[IWL_MVM_UAPSD_NOAGG_BSSIDS_NUM * ETH_ALEN * 3 + 1];
 	unsigned int pos = 0;
 	size_t bufsz = sizeof(buf);
@@ -1845,7 +1829,7 @@ iwl_dbgfs_uapsd_noagg_bssids_read(struct file *file, char __user *user_buf,
 
 	mutex_unlock(&mvm->mutex);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 static ssize_t
@@ -1909,11 +1893,10 @@ static ssize_t iwl_dbgfs_rfi_freq_table_write(struct iwl_mvm *mvm, char *buf,
 #define IWL_RFI_BUF_SIZE (IWL_RFI_LUT_INSTALLED_SIZE *\
 				(5 + IWL_RFI_LUT_ENTRY_CHANNELS_NUM * (6 + 5)))
 
-static ssize_t iwl_dbgfs_rfi_freq_table_read(struct file *file,
-					     char __user *user_buf,
-					     size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_rfi_freq_table_read_iter(struct kiocb *iocb,
+						  struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	struct iwl_rfi_freq_table_resp_cmd *resp;
 	u32 status;
 	char buf[IWL_RFI_BUF_SIZE];
@@ -1943,7 +1926,7 @@ static ssize_t iwl_dbgfs_rfi_freq_table_read(struct file *file,
 
 out:
 	kfree(resp);
-	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, pos, to);
 }
 
 MVM_DEBUGFS_READ_WRITE_FILE_OPS(prph_reg, 64);
@@ -1994,12 +1977,12 @@ MVM_DEBUGFS_READ_WRITE_FILE_OPS(he_sniffer_params, 32);
 MVM_DEBUGFS_WRITE_FILE_OPS(ltr_config, 512);
 MVM_DEBUGFS_READ_WRITE_FILE_OPS(rfi_freq_table, 16);
 
-static ssize_t iwl_dbgfs_mem_read(struct file *file, char __user *user_buf,
-				  size_t count, loff_t *ppos)
+static ssize_t iwl_dbgfs_mem_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	struct iwl_dbg_mem_access_cmd cmd = {};
 	struct iwl_dbg_mem_access_rsp *rsp;
+	size_t count = iov_iter_count(to);
 	struct iwl_host_cmd hcmd = {
 		.flags = CMD_WANT_SKB | CMD_SEND_IN_RFKILL,
 		.data = { &cmd, },
@@ -2011,12 +1994,12 @@ static ssize_t iwl_dbgfs_mem_read(struct file *file, char __user *user_buf,
 	if (!iwl_mvm_firmware_running(mvm))
 		return -EIO;
 
-	hcmd.id = WIDE_ID(DEBUG_GROUP, *ppos >> 24 ? UMAC_RD_WR : LMAC_RD_WR);
+	hcmd.id = WIDE_ID(DEBUG_GROUP, iocb->ki_pos >> 24 ? UMAC_RD_WR : LMAC_RD_WR);
 	cmd.op = cpu_to_le32(DEBUG_MEM_OP_READ);
 
 	/* Take care of alignment of both the position and the length */
-	delta = *ppos & 0x3;
-	cmd.addr = cpu_to_le32(*ppos - delta);
+	delta = iocb->ki_pos & 0x3;
+	cmd.addr = cpu_to_le32(iocb->ki_pos - delta);
 	cmd.len = cpu_to_le32(min(ALIGN(count + delta, 4) / 4,
 				  (size_t)DEBUG_MEM_MAX_SIZE_DWORDS));
 
@@ -2046,19 +2029,18 @@ static ssize_t iwl_dbgfs_mem_read(struct file *file, char __user *user_buf,
 		goto out;
 	}
 
-	ret = len - copy_to_user(user_buf, (u8 *)rsp->data + delta, len);
-	*ppos += ret;
+	ret = copy_to_iter((u8 *)rsp->data + delta, len, to);
+	iocb->ki_pos += ret;
 
 out:
 	iwl_free_resp(&hcmd);
 	return ret;
 }
 
-static ssize_t iwl_dbgfs_mem_write(struct file *file,
-				   const char __user *user_buf, size_t count,
-				   loff_t *ppos)
+static ssize_t iwl_dbgfs_mem_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct iwl_dbg_mem_access_cmd *cmd;
 	struct iwl_dbg_mem_access_rsp *rsp;
 	struct iwl_host_cmd hcmd = {};
@@ -2070,11 +2052,11 @@ static ssize_t iwl_dbgfs_mem_write(struct file *file,
 	if (!iwl_mvm_firmware_running(mvm))
 		return -EIO;
 
-	hcmd.id = WIDE_ID(DEBUG_GROUP, *ppos >> 24 ? UMAC_RD_WR : LMAC_RD_WR);
+	hcmd.id = WIDE_ID(DEBUG_GROUP, iocb->ki_pos >> 24 ? UMAC_RD_WR : LMAC_RD_WR);
 
-	if (*ppos & 0x3 || count < 4) {
+	if (iocb->ki_pos & 0x3 || count < 4) {
 		op = DEBUG_MEM_OP_WRITE_BYTES;
-		len = min(count, (size_t)(4 - (*ppos & 0x3)));
+		len = min(count, (size_t)(4 - (iocb->ki_pos & 0x3)));
 		data_size = len;
 	} else {
 		op = DEBUG_MEM_OP_WRITE;
@@ -2089,8 +2071,8 @@ static ssize_t iwl_dbgfs_mem_write(struct file *file,
 
 	cmd->op = cpu_to_le32(op);
 	cmd->len = cpu_to_le32(len);
-	cmd->addr = cpu_to_le32(*ppos);
-	if (copy_from_user((void *)cmd->data, user_buf, data_size)) {
+	cmd->addr = cpu_to_le32(iocb->ki_pos);
+	if (!copy_from_iter_full((void *)cmd->data, data_size, from)) {
 		kfree(cmd);
 		return -EFAULT;
 	}
@@ -2120,7 +2102,7 @@ static ssize_t iwl_dbgfs_mem_write(struct file *file,
 	}
 
 	ret = data_size;
-	*ppos += ret;
+	iocb->ki_pos += ret;
 
 out:
 	iwl_free_resp(&hcmd);
@@ -2128,8 +2110,8 @@ out:
 }
 
 static const struct file_operations iwl_dbgfs_mem_ops = {
-	.read = iwl_dbgfs_mem_read,
-	.write = iwl_dbgfs_mem_write,
+	.read_iter = iwl_dbgfs_mem_read,
+	.write_iter = iwl_dbgfs_mem_write,
 	.open = simple_open,
 	.llseek = default_llseek,
 };

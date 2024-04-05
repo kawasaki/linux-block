@@ -3683,10 +3683,9 @@ static int iwl_mvm_d3_test_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t iwl_mvm_d3_test_read(struct file *file, char __user *user_buf,
-				    size_t count, loff_t *ppos)
+static ssize_t iwl_mvm_d3_test_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct iwl_mvm *mvm = file->private_data;
+	struct iwl_mvm *mvm = iocb->ki_filp->private_data;
 	unsigned long end = jiffies + 60 * HZ;
 	u32 pme_asserted;
 
@@ -3769,7 +3768,7 @@ static int iwl_mvm_d3_test_release(struct inode *inode, struct file *file)
 
 const struct file_operations iwl_dbgfs_d3_test_ops = {
 	.open = iwl_mvm_d3_test_open,
-	.read = iwl_mvm_d3_test_read,
+	.read_iter = iwl_mvm_d3_test_read,
 	.release = iwl_mvm_d3_test_release,
 };
 #endif
