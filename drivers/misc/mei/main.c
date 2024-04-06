@@ -159,20 +159,19 @@ out:
 /**
  * mei_read - the read function.
  *
- * @file: pointer to file structure
- * @ubuf: pointer to user buffer
- * @length: buffer length
- * @offset: data offset in buffer
+ * @iocb: metadata for IO
+ * @to: pointer to user buffer
  *
  * Return: >=0 data length on success , <0 on error
  */
-static ssize_t mei_read(struct file *file, char __user *ubuf,
-			size_t length, loff_t *offset)
+static ssize_t mei_read(struct kiocb *iocb, struct iov_iter *to)
 {
+	struct file *file = iocb->ki_filp;
 	struct mei_cl *cl = file->private_data;
 	struct mei_device *dev;
 	struct mei_cl_cb *cb = NULL;
-	bool nonblock = !!(file->f_flags & O_NONBLOCK);
+	bool nonblock = !!(iocb->ki_filp->f_flags & O_NONBLOCK);
+	size_t length = iov_iter_count(to);
 	ssize_t rets;
 
 	if (WARN_ON(!cl || !cl->dev))
@@ -192,17 +191,12 @@ static ssize_t mei_read(struct file *file, char __user *ubuf,
 		goto out;
 	}
 
-	if (ubuf == NULL) {
-		rets = -EMSGSIZE;
-		goto out;
-	}
-
 	cb = mei_cl_read_cb(cl, file);
 	if (cb)
 		goto copy_buffer;
 
-	if (*offset > 0)
-		*offset = 0;
+	if (iocb->ki_pos > 0)
+		iocb->ki_pos = 0;
 
 	rets = mei_cl_read_start(cl, length, file);
 	if (rets && rets != -EBUSY) {
@@ -245,31 +239,31 @@ copy_buffer:
 	}
 
 	cl_dbg(dev, cl, "buf.size = %zu buf.idx = %zu offset = %lld\n",
-	       cb->buf.size, cb->buf_idx, *offset);
-	if (*offset >= cb->buf_idx) {
+	       cb->buf.size, cb->buf_idx, iocb->ki_pos);
+	if (iocb->ki_pos  >= cb->buf_idx) {
 		rets = 0;
 		goto free;
 	}
 
 	/* length is being truncated to PAGE_SIZE,
 	 * however buf_idx may point beyond that */
-	length = min_t(size_t, length, cb->buf_idx - *offset);
+	length = min_t(size_t, length, cb->buf_idx - iocb->ki_pos);
 
-	if (copy_to_user(ubuf, cb->buf.data + *offset, length)) {
+	if (!copy_to_iter(cb->buf.data + iocb->ki_pos, length, to)) {
 		dev_dbg(dev->dev, "failed to copy data to userland\n");
 		rets = -EFAULT;
 		goto free;
 	}
 
 	rets = length;
-	*offset += length;
+	iocb->ki_pos += length;
 	/* not all data was read, keep the cb */
-	if (*offset < cb->buf_idx)
+	if (iocb->ki_pos < cb->buf_idx)
 		goto out;
 
 free:
 	mei_cl_del_rd_completed(cl, cb);
-	*offset = 0;
+	iocb->ki_pos = 0;
 
 out:
 	cl_dbg(dev, cl, "end mei read rets = %zd\n", rets);
@@ -301,17 +295,16 @@ static u8 mei_cl_vtag_by_fp(const struct mei_cl *cl, const struct file *fp)
 /**
  * mei_write - the write function.
  *
- * @file: pointer to file structure
- * @ubuf: pointer to user buffer
- * @length: buffer length
- * @offset: data offset in buffer
+ * @iocb: metadata for IO
+ * @from: pointer to user buffer
  *
  * Return: >=0 data length on success , <0 on error
  */
-static ssize_t mei_write(struct file *file, const char __user *ubuf,
-			 size_t length, loff_t *offset)
+static ssize_t mei_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	struct file *file = iocb->ki_filp;
 	struct mei_cl *cl = file->private_data;
+	size_t length = iov_iter_count(from);
 	struct mei_cl_cb *cb;
 	struct mei_device *dev;
 	ssize_t rets;
@@ -377,7 +370,7 @@ static ssize_t mei_write(struct file *file, const char __user *ubuf,
 	}
 	cb->vtag = mei_cl_vtag_by_fp(cl, file);
 
-	rets = copy_from_user(cb->buf.data, ubuf, length);
+	rets = !copy_from_iter_full(cb->buf.data, length, from);
 	if (rets) {
 		dev_dbg(dev->dev, "failed to copy data from userland\n");
 		rets = -EFAULT;
@@ -1167,12 +1160,12 @@ ATTRIBUTE_GROUPS(mei);
  */
 static const struct file_operations mei_fops = {
 	.owner = THIS_MODULE,
-	.read = mei_read,
+	.read_iter = mei_read,
 	.unlocked_ioctl = mei_ioctl,
 	.compat_ioctl = compat_ptr_ioctl,
 	.open = mei_open,
 	.release = mei_release,
-	.write = mei_write,
+	.write_iter = mei_write,
 	.poll = mei_poll,
 	.fsync = mei_fsync,
 	.fasync = mei_fasync,
