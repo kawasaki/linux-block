@@ -184,8 +184,7 @@ static int restart_write_file(struct b43legacy_wldev *dev, const char *buf, size
 
 #undef fappend
 
-static ssize_t b43legacy_debugfs_read(struct file *file, char __user *userbuf,
-				size_t count, loff_t *ppos)
+static ssize_t b43legacy_debugfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct b43legacy_wldev *dev;
 	struct b43legacy_debugfs_fops *dfops;
@@ -194,11 +193,12 @@ static ssize_t b43legacy_debugfs_read(struct file *file, char __user *userbuf,
 	char *buf;
 	const size_t bufsize = 1024 * 16; /* 16 KiB buffer */
 	const size_t buforder = get_order(bufsize);
+	size_t count = iov_iter_count(to);
 	int err = 0;
 
 	if (!count)
 		return 0;
-	dev = file->private_data;
+	dev = iocb->ki_filp->private_data;
 	if (!dev)
 		return -ENODEV;
 
@@ -208,7 +208,7 @@ static ssize_t b43legacy_debugfs_read(struct file *file, char __user *userbuf,
 		goto out_unlock;
 	}
 
-	dfops = container_of(debugfs_real_fops(file),
+	dfops = container_of(debugfs_real_fops(iocb->ki_filp),
 			     struct b43legacy_debugfs_fops, fops);
 	if (!dfops->read) {
 		err = -ENOSYS;
@@ -238,10 +238,9 @@ static ssize_t b43legacy_debugfs_read(struct file *file, char __user *userbuf,
 		dfile->buffer = buf;
 	}
 
-	ret = simple_read_from_buffer(userbuf, count, ppos,
-				      dfile->buffer,
-				      dfile->data_len);
-	if (*ppos >= dfile->data_len) {
+	ret = simple_copy_to_iter(dfile->buffer, &iocb->ki_pos,
+				  dfile->data_len, to);
+	if (iocb->ki_pos >= dfile->data_len) {
 		free_pages((unsigned long)dfile->buffer, buforder);
 		dfile->buffer = NULL;
 		dfile->data_len = 0;
@@ -252,12 +251,12 @@ out_unlock:
 	return err ? err : ret;
 }
 
-static ssize_t b43legacy_debugfs_write(struct file *file,
-				 const char __user *userbuf,
-				 size_t count, loff_t *ppos)
+static ssize_t b43legacy_debugfs_write(struct kiocb *iocb,
+				       struct iov_iter *from)
 {
 	struct b43legacy_wldev *dev;
 	struct b43legacy_debugfs_fops *dfops;
+	size_t count = iov_iter_count(from);
 	char *buf;
 	int err = 0;
 
@@ -265,7 +264,7 @@ static ssize_t b43legacy_debugfs_write(struct file *file,
 		return 0;
 	if (count > PAGE_SIZE)
 		return -E2BIG;
-	dev = file->private_data;
+	dev = iocb->ki_filp->private_data;
 	if (!dev)
 		return -ENODEV;
 
@@ -275,7 +274,7 @@ static ssize_t b43legacy_debugfs_write(struct file *file,
 		goto out_unlock;
 	}
 
-	dfops = container_of(debugfs_real_fops(file),
+	dfops = container_of(debugfs_real_fops(iocb->ki_filp),
 			     struct b43legacy_debugfs_fops, fops);
 	if (!dfops->write) {
 		err = -ENOSYS;
@@ -287,7 +286,7 @@ static ssize_t b43legacy_debugfs_write(struct file *file,
 		err = -ENOMEM;
 		goto out_unlock;
 	}
-	if (copy_from_user(buf, userbuf, count)) {
+	if (!copy_from_iter_full(buf, count, from)) {
 		err = -EFAULT;
 		goto out_freepage;
 	}
@@ -315,8 +314,8 @@ out_unlock:
 		.write	= _write,				\
 		.fops	= {					\
 			.open	= simple_open,				\
-			.read	= b43legacy_debugfs_read,		\
-			.write	= b43legacy_debugfs_write,		\
+			.read_iter	= b43legacy_debugfs_read,	\
+			.write_iter	= b43legacy_debugfs_write,	\
 			.llseek = generic_file_llseek,			\
 		},						\
 		.file_struct_offset = offsetof(struct b43legacy_dfsentry, \
