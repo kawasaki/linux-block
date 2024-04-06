@@ -140,16 +140,16 @@ struct devlink_health_reporter_ops nsim_dev_dummy_reporter_ops = {
 	.diagnose = nsim_dev_dummy_reporter_diagnose,
 };
 
-static ssize_t nsim_dev_health_break_write(struct file *file,
-					   const char __user *data,
-					   size_t count, loff_t *ppos)
+static ssize_t nsim_dev_health_break_write(struct kiocb *iocb,
+					   struct iov_iter *from)
 {
-	struct nsim_dev_health *health = file->private_data;
+	struct nsim_dev_health *health = iocb->ki_filp->private_data;
 	struct nsim_dev_dummy_reporter_ctx ctx;
+	size_t count = iov_iter_count(from);
 	char *break_msg;
 	int err;
 
-	break_msg = memdup_user_nul(data, count);
+	break_msg = iterdup_nul(from, count);
 	if (IS_ERR(break_msg))
 		return PTR_ERR(break_msg);
 
@@ -168,7 +168,7 @@ out:
 
 static const struct file_operations nsim_dev_health_break_fops = {
 	.open = simple_open,
-	.write = nsim_dev_health_break_write,
+	.write_iter = nsim_dev_health_break_write,
 	.llseek = generic_file_llseek,
 	.owner = THIS_MODULE,
 };
