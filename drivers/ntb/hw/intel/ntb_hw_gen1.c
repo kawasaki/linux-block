@@ -488,8 +488,7 @@ static void ndev_deinit_isr(struct intel_ntb_dev *ndev)
 	}
 }
 
-static ssize_t ndev_ntb_debugfs_read(struct file *filp, char __user *ubuf,
-				     size_t count, loff_t *offp)
+static ssize_t ndev_ntb_debugfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct intel_ntb_dev *ndev;
 	struct pci_dev *pdev;
@@ -498,8 +497,9 @@ static ssize_t ndev_ntb_debugfs_read(struct file *filp, char __user *ubuf,
 	size_t buf_size;
 	ssize_t ret, off;
 	union { u64 v64; u32 v32; u16 v16; u8 v8; } u;
+	size_t count = iov_iter_count(to);
 
-	ndev = filp->private_data;
+	ndev = iocb->ki_filp->private_data;
 	pdev = ndev->ntb.pdev;
 	mmio = ndev->self_mmio;
 
@@ -749,22 +749,21 @@ static ssize_t ndev_ntb_debugfs_read(struct file *filp, char __user *ubuf,
 					 "CORERRSTS -\t\t%#06x\n", u.v32);
 	}
 
-	ret = simple_read_from_buffer(ubuf, count, offp, buf, off);
+	ret = simple_copy_to_iter(buf, &iocb->ki_pos, off, to);
 	kfree(buf);
 	return ret;
 }
 
-static ssize_t ndev_debugfs_read(struct file *filp, char __user *ubuf,
-				 size_t count, loff_t *offp)
+static ssize_t ndev_debugfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct intel_ntb_dev *ndev = filp->private_data;
+	struct intel_ntb_dev *ndev = iocb->ki_filp->private_data;
 
 	if (pdev_is_gen1(ndev->ntb.pdev))
-		return ndev_ntb_debugfs_read(filp, ubuf, count, offp);
+		return ndev_ntb_debugfs_read(iocb, to);
 	else if (pdev_is_gen3(ndev->ntb.pdev))
-		return ndev_ntb3_debugfs_read(filp, ubuf, count, offp);
+		return ndev_ntb3_debugfs_read(iocb, to);
 	else if (pdev_is_gen4(ndev->ntb.pdev) || pdev_is_gen5(ndev->ntb.pdev))
-		return ndev_ntb4_debugfs_read(filp, ubuf, count, offp);
+		return ndev_ntb4_debugfs_read(iocb, to);
 
 	return -ENXIO;
 }
@@ -2021,7 +2020,7 @@ static const struct ntb_dev_ops intel_ntb_ops = {
 static const struct file_operations intel_ntb_debugfs_info = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.read = ndev_debugfs_read,
+	.read_iter = ndev_debugfs_read,
 };
 
 static const struct pci_device_id intel_ntb_pci_tbl[] = {

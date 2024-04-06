@@ -462,14 +462,13 @@ void ntb_transport_unregister_client(struct ntb_transport_client *drv)
 }
 EXPORT_SYMBOL_GPL(ntb_transport_unregister_client);
 
-static ssize_t debugfs_read(struct file *filp, char __user *ubuf, size_t count,
-			    loff_t *offp)
+static ssize_t debugfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct ntb_transport_qp *qp;
 	char *buf;
 	ssize_t ret, out_offset, out_count;
 
-	qp = filp->private_data;
+	qp = iocb->ki_filp->private_data;
 
 	if (!qp || !qp->link_is_up)
 		return 0;
@@ -550,7 +549,7 @@ static ssize_t debugfs_read(struct file *filp, char __user *ubuf, size_t count,
 	if (out_offset > out_count)
 		out_offset = out_count;
 
-	ret = simple_read_from_buffer(ubuf, count, offp, buf, out_offset);
+	ret = simple_copy_to_iter(buf, &iocb->ki_pos, out_offset, to);
 	kfree(buf);
 	return ret;
 }
@@ -558,7 +557,7 @@ static ssize_t debugfs_read(struct file *filp, char __user *ubuf, size_t count,
 static const struct file_operations ntb_qp_debugfs_stats = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.read = debugfs_read,
+	.read_iter = debugfs_read,
 };
 
 static void ntb_list_add(spinlock_t *lock, struct list_head *entry,
