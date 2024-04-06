@@ -91,8 +91,8 @@ static const struct file_operations __space ## _fops = {		\
 	.owner = THIS_MODULE,						\
 	.open = __space ## _open,					\
 	.release = single_release,					\
-	.read  = seq_read,						\
-	.write = __write,						\
+	.read_iter  = seq_read_iter,					\
+	.write_iter = __write,						\
 	.llseek = seq_lseek,						\
 }
 
@@ -100,7 +100,7 @@ static const struct file_operations __space ## _fops = {		\
 	DEBUGFS_ATTR(__space, NULL)
 
 #define DEBUGFS_ATTR_RW(__space)					\
-	DEBUGFS_ATTR(__space, __space ## _write)
+	DEBUGFS_ATTR(__space, __space ## _write ## _iter)
 
 static struct dentry *tb_debugfs_root;
 
@@ -223,6 +223,7 @@ static ssize_t port_regs_write(struct file *file, const char __user *user_buf,
 
 	return regs_write(port->sw, port, user_buf, count, ppos);
 }
+FOPS_WRITE_ITER_HELPER(port_regs_write);
 
 static ssize_t switch_regs_write(struct file *file, const char __user *user_buf,
 				 size_t count, loff_t *ppos)
@@ -232,6 +233,7 @@ static ssize_t switch_regs_write(struct file *file, const char __user *user_buf,
 
 	return regs_write(sw, NULL, user_buf, count, ppos);
 }
+FOPS_WRITE_ITER_HELPER(switch_regs_write);
 
 static bool parse_sb_line(char **line, u8 *reg, u8 *data, size_t data_size,
 			  size_t *bytes_read)
@@ -346,6 +348,7 @@ out:
 
 	return ret < 0 ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(port_sb_regs_write);
 
 static ssize_t retimer_sb_regs_write(struct file *file,
 				     const char __user *user_buf,
@@ -379,12 +382,14 @@ out:
 
 	return ret < 0 ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(retimer_sb_regs_write);
+
 #define DEBUGFS_MODE		0600
 #else
-#define port_regs_write		NULL
-#define switch_regs_write	NULL
-#define port_sb_regs_write	NULL
-#define retimer_sb_regs_write	NULL
+#define port_regs_write_iter		NULL
+#define switch_regs_write_iter		NULL
+#define port_sb_regs_write_iter		NULL
+#define retimer_sb_regs_write_iter	NULL
 #define DEBUGFS_MODE		0400
 #endif
 
@@ -546,6 +551,7 @@ out_unlock:
 
 	return ret < 0 ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(margining_ber_level_write);
 
 static void ber_level_show(struct seq_file *s, unsigned int val)
 {
@@ -691,6 +697,7 @@ out_free:
 	free_page((unsigned long)buf);
 	return ret < 0 ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(margining_lanes_write);
 
 static int margining_lanes_show(struct seq_file *s, void *not_used)
 {
@@ -722,18 +729,17 @@ static int margining_lanes_show(struct seq_file *s, void *not_used)
 DEBUGFS_ATTR_RW(margining_lanes);
 
 static ssize_t
-margining_voltage_time_offset_write(struct file *file,
-				    const char __user *user_buf,
-				    size_t count, loff_t *ppos)
+margining_voltage_time_offset_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *s = file->private_data;
+	struct seq_file *s = iocb->ki_filp->private_data;
 	struct tb_margining *margining = s->private;
 	struct tb *tb = margining->port->sw->tb;
+	size_t count = iov_iter_count(from);
 	unsigned int max_margin;
 	unsigned int val;
 	int ret;
 
-	ret = kstrtouint_from_user(user_buf, count, 10, &val);
+	ret = kstrtouint_from_iter(from, count, 10, &val);
 	if (ret)
 		return ret;
 
@@ -808,6 +814,7 @@ margining_error_counter_write(struct file *file, const char __user *user_buf,
 
 	return count;
 }
+FOPS_WRITE_ITER_HELPER(margining_error_counter_write);
 
 static int margining_error_counter_show(struct seq_file *s, void *not_used)
 {
@@ -839,16 +846,16 @@ static int margining_error_counter_show(struct seq_file *s, void *not_used)
 DEBUGFS_ATTR_RW(margining_error_counter);
 
 static ssize_t
-margining_dwell_time_write(struct file *file, const char __user *user_buf,
-			   size_t count, loff_t *ppos)
+margining_dwell_time_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *s = file->private_data;
+	struct seq_file *s = iocb->ki_filp->private_data;
 	struct tb_margining *margining = s->private;
 	struct tb *tb = margining->port->sw->tb;
+	size_t count = iov_iter_count(from);
 	unsigned int val;
 	int ret;
 
-	ret = kstrtouint_from_user(user_buf, count, 10, &val);
+	ret = kstrtouint_from_iter(from, count, 10, &val);
 	if (ret)
 		return ret;
 
@@ -879,16 +886,17 @@ static int margining_dwell_time_show(struct seq_file *s, void *not_used)
 DEBUGFS_ATTR_RW(margining_dwell_time);
 
 static ssize_t
-margining_optional_voltage_offset_write(struct file *file, const char __user *user_buf,
-					size_t count, loff_t *ppos)
+margining_optional_voltage_offset_write_iter(struct kiocb *iocb,
+					     struct iov_iter *from)
 {
-	struct seq_file *s = file->private_data;
+	struct seq_file *s = iocb->ki_filp->private_data;
 	struct tb_margining *margining = s->private;
 	struct tb *tb = margining->port->sw->tb;
+	size_t count = iov_iter_count(from);
 	bool val;
 	int ret;
 
-	ret = kstrtobool_from_user(user_buf, count, &val);
+	ret = kstrtobool_from_iter(from, count, &val);
 	if (ret)
 		return ret;
 
@@ -954,6 +962,7 @@ out_free:
 	free_page((unsigned long)buf);
 	return ret ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(margining_mode_write);
 
 static int margining_mode_show(struct seq_file *s, void *not_used)
 {
@@ -1145,6 +1154,7 @@ static ssize_t margining_results_write(struct file *file,
 	mutex_unlock(&tb->lock);
 	return count;
 }
+FOPS_WRITE_ITER_HELPER(margining_results_write);
 
 static void voltage_margin_show(struct seq_file *s,
 				const struct tb_margining *margining, u8 val)
@@ -1290,6 +1300,7 @@ out_free:
 	free_page((unsigned long)buf);
 	return ret ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(margining_test_write);
 
 static int margining_test_show(struct seq_file *s, void *not_used)
 {
@@ -1356,6 +1367,7 @@ out_free:
 	free_page((unsigned long)buf);
 	return ret ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(margining_margin_write);
 
 static int margining_margin_show(struct seq_file *s, void *not_used)
 {
@@ -1652,6 +1664,7 @@ out:
 
 	return ret < 0 ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(counters_write);
 
 static void cap_show_by_dw(struct seq_file *s, struct tb_switch *sw,
 			   struct tb_port *port, unsigned int cap,
