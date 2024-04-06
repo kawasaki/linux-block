@@ -132,11 +132,10 @@ void ath11k_debugfs_sta_update_txcompl(struct ath11k *ar,
 	ath11k_dp_tx_update_txcompl(ar, ts);
 }
 
-static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
-					    char __user *user_buf,
-					    size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_dump_tx_stats(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	struct ath11k_htt_data_stats *stats;
@@ -225,7 +224,7 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 
 	if (len > size)
 		len = size;
-	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	retval = simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 	kfree(buf);
 
 	mutex_unlock(&ar->conf_mutex);
@@ -233,17 +232,16 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 }
 
 static const struct file_operations fops_tx_stats = {
-	.read = ath11k_dbg_sta_dump_tx_stats,
+	.read_iter = ath11k_dbg_sta_dump_tx_stats,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
-					    char __user *user_buf,
-					    size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_dump_rx_stats(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	struct ath11k_rx_peer_stats *rx_stats = arsta->rx_stats;
@@ -323,7 +321,7 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 
 	if (len > size)
 		len = size;
-	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	retval = simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 	kfree(buf);
 
 	mutex_unlock(&ar->conf_mutex);
@@ -331,7 +329,7 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 }
 
 static const struct file_operations fops_rx_stats = {
-	.read = ath11k_dbg_sta_dump_rx_stats,
+	.read_iter = ath11k_dbg_sta_dump_rx_stats,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -388,32 +386,31 @@ ath11k_dbg_sta_release_htt_peer_stats(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t ath11k_dbg_sta_read_htt_peer_stats(struct file *file,
-						  char __user *user_buf,
-						  size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_read_htt_peer_stats(struct kiocb *iocb,
+						  struct iov_iter *to)
 {
-	struct debug_htt_stats_req *stats_req = file->private_data;
+	struct debug_htt_stats_req *stats_req = iocb->ki_filp->private_data;
 	char *buf;
 	u32 length = 0;
 
 	buf = stats_req->buf;
 	length = min_t(u32, stats_req->buf_len, ATH11K_HTT_STATS_BUF_SIZE);
-	return simple_read_from_buffer(user_buf, count, ppos, buf, length);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, length, to);
 }
 
 static const struct file_operations fops_htt_peer_stats = {
 	.open = ath11k_dbg_sta_open_htt_peer_stats,
 	.release = ath11k_dbg_sta_release_htt_peer_stats,
-	.read = ath11k_dbg_sta_read_htt_peer_stats,
+	.read_iter = ath11k_dbg_sta_read_htt_peer_stats,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_write_peer_pktlog(struct file *file,
-						const char __user *buf,
-						size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_write_peer_pktlog(struct kiocb *iocb,
+						struct iov_iter *from)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	int ret, enable;
@@ -425,7 +422,7 @@ static ssize_t ath11k_dbg_sta_write_peer_pktlog(struct file *file,
 		goto out;
 	}
 
-	ret = kstrtoint_from_user(buf, count, 0, &enable);
+	ret = kstrtoint_from_iter(from, count, 0, &enable);
 	if (ret)
 		goto out;
 
@@ -449,11 +446,10 @@ out:
 	return ret;
 }
 
-static ssize_t ath11k_dbg_sta_read_peer_pktlog(struct file *file,
-					       char __user *ubuf,
-					       size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_read_peer_pktlog(struct kiocb *iocb,
+					       struct iov_iter *to)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	char buf[32] = {0};
@@ -465,30 +461,29 @@ static ssize_t ath11k_dbg_sta_read_peer_pktlog(struct file *file,
 			ar->debug.pktlog_peer_addr);
 	mutex_unlock(&ar->conf_mutex);
 
-	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
 static const struct file_operations fops_peer_pktlog = {
-	.write = ath11k_dbg_sta_write_peer_pktlog,
-	.read = ath11k_dbg_sta_read_peer_pktlog,
+	.write_iter = ath11k_dbg_sta_write_peer_pktlog,
+	.read_iter = ath11k_dbg_sta_read_peer_pktlog,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_write_delba(struct file *file,
-					  const char __user *user_buf,
-					  size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_write_delba(struct kiocb *iocb,
+					  struct iov_iter *from)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	u32 tid, initiator, reason;
 	int ret;
 	char buf[64] = {0};
 
-	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
-				     user_buf, count);
+	ret = simple_copy_from_iter(buf, &iocb->ki_pos, sizeof(buf) - 1, from);
 	if (ret <= 0)
 		return ret;
 
@@ -521,25 +516,24 @@ out:
 }
 
 static const struct file_operations fops_delba = {
-	.write = ath11k_dbg_sta_write_delba,
+	.write_iter = ath11k_dbg_sta_write_delba,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_write_addba_resp(struct file *file,
-					       const char __user *user_buf,
-					       size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_write_addba_resp(struct kiocb *iocb,
+					       struct iov_iter *from)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	u32 tid, status;
 	int ret;
 	char buf[64] = {0};
 
-	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
-				     user_buf, count);
+	ret = simple_copy_from_iter(buf, &iocb->ki_pos, sizeof(buf) - 1, from);
 	if (ret <= 0)
 		return ret;
 
@@ -571,25 +565,24 @@ out:
 }
 
 static const struct file_operations fops_addba_resp = {
-	.write = ath11k_dbg_sta_write_addba_resp,
+	.write_iter = ath11k_dbg_sta_write_addba_resp,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_write_addba(struct file *file,
-					  const char __user *user_buf,
-					  size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_write_addba(struct kiocb *iocb,
+					  struct iov_iter *from)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	u32 tid, buf_size;
 	int ret;
 	char buf[64] = {0};
 
-	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
-				     user_buf, count);
+	ret = simple_copy_from_iter(buf, &iocb->ki_pos, sizeof(buf) - 1, from);
 	if (ret <= 0)
 		return ret;
 
@@ -622,17 +615,16 @@ out:
 }
 
 static const struct file_operations fops_addba = {
-	.write = ath11k_dbg_sta_write_addba,
+	.write_iter = ath11k_dbg_sta_write_addba,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_read_aggr_mode(struct file *file,
-					     char __user *user_buf,
-					     size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_read_aggr_mode(struct kiocb *iocb,
+					     struct iov_iter *to)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	char buf[64];
@@ -645,20 +637,20 @@ static ssize_t ath11k_dbg_sta_read_aggr_mode(struct file *file,
 			"auto" : "manual", "auto = 0", "manual = 1");
 	mutex_unlock(&ar->conf_mutex);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t ath11k_dbg_sta_write_aggr_mode(struct file *file,
-					      const char __user *user_buf,
-					      size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_write_aggr_mode(struct kiocb *iocb,
+					      struct iov_iter *from)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	u32 aggr_mode;
 	int ret;
 
-	if (kstrtouint_from_user(user_buf, count, 0, &aggr_mode))
+	if (kstrtouint_from_iter(from, count, 0, &aggr_mode))
 		return -EINVAL;
 
 	if (aggr_mode >= ATH11K_DBG_AGGR_MODE_MAX)
@@ -685,26 +677,25 @@ out:
 }
 
 static const struct file_operations fops_aggr_mode = {
-	.read = ath11k_dbg_sta_read_aggr_mode,
-	.write = ath11k_dbg_sta_write_aggr_mode,
+	.read_iter = ath11k_dbg_sta_read_aggr_mode,
+	.write_iter = ath11k_dbg_sta_write_aggr_mode,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
 static ssize_t
-ath11k_write_htt_peer_stats_reset(struct file *file,
-				  const char __user *user_buf,
-				  size_t count, loff_t *ppos)
+ath11k_write_htt_peer_stats_reset(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	struct htt_ext_stats_cfg_params cfg_params = { 0 };
 	int ret;
 	u8 type;
 
-	ret = kstrtou8_from_user(user_buf, count, 0, &type);
+	ret = kstrtou8_from_iter(from, count, 0, &type);
 	if (ret)
 		return ret;
 
@@ -746,17 +737,16 @@ ath11k_write_htt_peer_stats_reset(struct file *file,
 }
 
 static const struct file_operations fops_htt_peer_stats_reset = {
-	.write = ath11k_write_htt_peer_stats_reset,
+	.write_iter = ath11k_write_htt_peer_stats_reset,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_read_peer_ps_state(struct file *file,
-						 char __user *user_buf,
-						 size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_read_peer_ps_state(struct kiocb *iocb,
+						 struct iov_iter *to)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	char buf[20];
@@ -768,22 +758,20 @@ static ssize_t ath11k_dbg_sta_read_peer_ps_state(struct file *file,
 
 	spin_unlock_bh(&ar->data_lock);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
 static const struct file_operations fops_peer_ps_state = {
 	.open = simple_open,
-	.read = ath11k_dbg_sta_read_peer_ps_state,
+	.read_iter = ath11k_dbg_sta_read_peer_ps_state,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_read_current_ps_duration(struct file *file,
-						       char __user *user_buf,
-						       size_t count,
-						       loff_t *ppos)
+static ssize_t ath11k_dbg_sta_read_current_ps_duration(struct kiocb *iocb,
+						       struct iov_iter *to)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	u64 time_since_station_in_power_save;
@@ -803,21 +791,20 @@ static ssize_t ath11k_dbg_sta_read_current_ps_duration(struct file *file,
 			time_since_station_in_power_save);
 	spin_unlock_bh(&ar->data_lock);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
 static const struct file_operations fops_current_ps_duration = {
 	.open = simple_open,
-	.read = ath11k_dbg_sta_read_current_ps_duration,
+	.read_iter = ath11k_dbg_sta_read_current_ps_duration,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath11k_dbg_sta_read_total_ps_duration(struct file *file,
-						     char __user *user_buf,
-						     size_t count, loff_t *ppos)
+static ssize_t ath11k_dbg_sta_read_total_ps_duration(struct kiocb *iocb,
+						     struct iov_iter *to)
 {
-	struct ieee80211_sta *sta = file->private_data;
+	struct ieee80211_sta *sta = iocb->ki_filp->private_data;
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	char buf[20];
@@ -838,12 +825,12 @@ static ssize_t ath11k_dbg_sta_read_total_ps_duration(struct file *file,
 
 	spin_unlock_bh(&ar->data_lock);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
 static const struct file_operations fops_total_ps_duration = {
 	.open = simple_open,
-	.read = ath11k_dbg_sta_read_total_ps_duration,
+	.read_iter = ath11k_dbg_sta_read_total_ps_duration,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
