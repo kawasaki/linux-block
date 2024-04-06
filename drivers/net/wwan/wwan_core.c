@@ -684,15 +684,15 @@ static int wwan_port_fops_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static ssize_t wwan_port_fops_read(struct file *filp, char __user *buf,
-				   size_t count, loff_t *ppos)
+static ssize_t wwan_port_fops_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct wwan_port *port = filp->private_data;
+	struct wwan_port *port = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct sk_buff *skb;
 	size_t copied;
 	int ret;
 
-	ret = wwan_wait_rx(port, !!(filp->f_flags & O_NONBLOCK));
+	ret = wwan_wait_rx(port, !!(iocb->ki_filp->f_flags & O_NONBLOCK));
 	if (ret)
 		return ret;
 
@@ -701,7 +701,7 @@ static ssize_t wwan_port_fops_read(struct file *filp, char __user *buf,
 		return -EIO;
 
 	copied = min_t(size_t, count, skb->len);
-	if (copy_to_user(buf, skb->data, copied)) {
+	if (!copy_to_iter_full(skb->data, copied, to)) {
 		kfree_skb(skb);
 		return -EFAULT;
 	}
@@ -716,15 +716,15 @@ static ssize_t wwan_port_fops_read(struct file *filp, char __user *buf,
 	return copied;
 }
 
-static ssize_t wwan_port_fops_write(struct file *filp, const char __user *buf,
-				    size_t count, loff_t *offp)
+static ssize_t wwan_port_fops_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct sk_buff *skb, *head = NULL, *tail = NULL;
-	struct wwan_port *port = filp->private_data;
+	struct wwan_port *port = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	size_t frag_len, remain = count;
 	int ret;
 
-	ret = wwan_wait_tx(port, !!(filp->f_flags & O_NONBLOCK));
+	ret = wwan_wait_tx(port, !!(iocb->ki_filp->f_flags & O_NONBLOCK));
 	if (ret)
 		return ret;
 
@@ -747,7 +747,7 @@ static ssize_t wwan_port_fops_write(struct file *filp, const char __user *buf,
 			tail = skb;
 		}
 
-		if (copy_from_user(skb_put(skb, frag_len), buf + count - remain, frag_len)) {
+		if (!copy_from_iter_full(skb_put(skb, frag_len), frag_len, from)) {
 			ret = -EFAULT;
 			goto freeskb;
 		}
@@ -759,7 +759,7 @@ static ssize_t wwan_port_fops_write(struct file *filp, const char __user *buf,
 		}
 	} while (remain -= frag_len);
 
-	ret = wwan_port_op_tx(port, head, !!(filp->f_flags & O_NONBLOCK));
+	ret = wwan_port_op_tx(port, head, !!(iocb->ki_filp->f_flags & O_NONBLOCK));
 	if (!ret)
 		return count;
 
@@ -897,8 +897,8 @@ static const struct file_operations wwan_port_fops = {
 	.owner = THIS_MODULE,
 	.open = wwan_port_fops_open,
 	.release = wwan_port_fops_release,
-	.read = wwan_port_fops_read,
-	.write = wwan_port_fops_write,
+	.read_iter = wwan_port_fops_read,
+	.write_iter = wwan_port_fops_write,
 	.poll = wwan_port_fops_poll,
 	.unlocked_ioctl = wwan_port_fops_ioctl,
 #ifdef CONFIG_COMPAT
