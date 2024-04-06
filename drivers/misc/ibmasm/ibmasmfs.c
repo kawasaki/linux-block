@@ -256,18 +256,19 @@ static int command_file_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t command_file_read(struct file *file, char __user *buf, size_t count, loff_t *offset)
+static ssize_t command_file_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ibmasmfs_command_data *command_data = file->private_data;
+	struct ibmasmfs_command_data *command_data = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct command *cmd;
 	int len;
 	unsigned long flags;
 
-	if (*offset < 0)
+	if (iocb->ki_pos < 0)
 		return -EINVAL;
 	if (count == 0 || count > IBMASM_CMD_MAX_BUFFER_SIZE)
 		return 0;
-	if (*offset != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	spin_lock_irqsave(&command_data->sp->lock, flags);
@@ -284,7 +285,7 @@ static ssize_t command_file_read(struct file *file, char __user *buf, size_t cou
 		return -EIO;
 	}
 	len = min(count, cmd->buffer_size);
-	if (copy_to_user(buf, cmd->buffer, len)) {
+	if (!copy_to_iter_full(cmd->buffer, len, to)) {
 		command_put(cmd);
 		return -EFAULT;
 	}
@@ -293,17 +294,18 @@ static ssize_t command_file_read(struct file *file, char __user *buf, size_t cou
 	return len;
 }
 
-static ssize_t command_file_write(struct file *file, const char __user *ubuff, size_t count, loff_t *offset)
+static ssize_t command_file_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ibmasmfs_command_data *command_data = file->private_data;
+	struct ibmasmfs_command_data *command_data = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct command *cmd;
 	unsigned long flags;
 
-	if (*offset < 0)
+	if (iocb->ki_pos < 0)
 		return -EINVAL;
 	if (count == 0 || count > IBMASM_CMD_MAX_BUFFER_SIZE)
 		return 0;
-	if (*offset != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	/* commands are executed sequentially, only one command at a time */
@@ -314,7 +316,7 @@ static ssize_t command_file_write(struct file *file, const char __user *ubuff, s
 	if (!cmd)
 		return -ENOMEM;
 
-	if (copy_from_user(cmd->buffer, ubuff, count)) {
+	if (!copy_from_iter_full(cmd->buffer, count, from)) {
 		command_put(cmd);
 		return -EFAULT;
 	}
@@ -365,19 +367,20 @@ static int event_file_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t event_file_read(struct file *file, char __user *buf, size_t count, loff_t *offset)
+static ssize_t event_file_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ibmasmfs_event_data *event_data = file->private_data;
+	struct ibmasmfs_event_data *event_data = iocb->ki_filp->private_data;
 	struct event_reader *reader = &event_data->reader;
 	struct service_processor *sp = event_data->sp;
+	size_t count = iov_iter_count(to);
 	int ret;
 	unsigned long flags;
 
-	if (*offset < 0)
+	if (iocb->ki_pos < 0)
 		return -EINVAL;
 	if (count == 0 || count > IBMASM_EVENT_MAX_SIZE)
 		return 0;
-	if (*offset != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	spin_lock_irqsave(&sp->lock, flags);
@@ -397,7 +400,7 @@ static ssize_t event_file_read(struct file *file, char __user *buf, size_t count
 		goto out;
 	}
 
-        if (copy_to_user(buf, reader->data, reader->data_size)) {
+        if (!copy_to_iter_full(reader->data, reader->data_size, to)) {
 		ret = -EFAULT;
 		goto out;
 	}
@@ -408,15 +411,16 @@ out:
 	return ret;
 }
 
-static ssize_t event_file_write(struct file *file, const char __user *buf, size_t count, loff_t *offset)
+static ssize_t event_file_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ibmasmfs_event_data *event_data = file->private_data;
+	struct ibmasmfs_event_data *event_data = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 
-	if (*offset < 0)
+	if (iocb->ki_pos < 0)
 		return -EINVAL;
 	if (count != 1)
 		return 0;
-	if (*offset != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	ibmasm_cancel_next_event(&event_data->reader);
@@ -449,17 +453,18 @@ static int r_heartbeat_file_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t r_heartbeat_file_read(struct file *file, char __user *buf, size_t count, loff_t *offset)
+static ssize_t r_heartbeat_file_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ibmasmfs_heartbeat_data *rhbeat = file->private_data;
+	struct ibmasmfs_heartbeat_data *rhbeat = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	unsigned long flags;
 	int result;
 
-	if (*offset < 0)
+	if (iocb->ki_pos < 0)
 		return -EINVAL;
 	if (count == 0 || count > 1024)
 		return 0;
-	if (*offset != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	/* allow only one reverse heartbeat per process */
@@ -477,15 +482,16 @@ static ssize_t r_heartbeat_file_read(struct file *file, char __user *buf, size_t
 	return result;
 }
 
-static ssize_t r_heartbeat_file_write(struct file *file, const char __user *buf, size_t count, loff_t *offset)
+static ssize_t r_heartbeat_file_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ibmasmfs_heartbeat_data *rhbeat = file->private_data;
+	struct ibmasmfs_heartbeat_data *rhbeat = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 
-	if (*offset < 0)
+	if (iocb->ki_pos < 0)
 		return -EINVAL;
 	if (count != 1)
 		return 0;
-	if (*offset != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	if (rhbeat->active)
@@ -499,9 +505,9 @@ static int remote_settings_file_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t remote_settings_file_read(struct file *file, char __user *buf, size_t count, loff_t *offset)
+static ssize_t remote_settings_file_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	void __iomem *address = (void __iomem *)file->private_data;
+	void __iomem *address = (void __iomem *)iocb->ki_filp->private_data;
 	int len = 0;
 	unsigned int value;
 	char lbuf[20];
@@ -509,28 +515,28 @@ static ssize_t remote_settings_file_read(struct file *file, char __user *buf, si
 	value = readl(address);
 	len = snprintf(lbuf, sizeof(lbuf), "%d\n", value);
 
-	return simple_read_from_buffer(buf, count, offset, lbuf, len);
+	return simple_copy_to_iter(lbuf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t remote_settings_file_write(struct file *file, const char __user *ubuff, size_t count, loff_t *offset)
+static ssize_t remote_settings_file_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	void __iomem *address = (void __iomem *)file->private_data;
+	void __iomem *address = (void __iomem *)iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	char *buff;
 	unsigned int value;
 
-	if (*offset < 0)
+	if (iocb->ki_pos < 0)
 		return -EINVAL;
 	if (count == 0 || count > 1024)
 		return 0;
-	if (*offset != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	buff = kzalloc (count + 1, GFP_KERNEL);
 	if (!buff)
 		return -ENOMEM;
 
-
-	if (copy_from_user(buff, ubuff, count)) {
+	if (!copy_from_iter_full(buff, count, from)) {
 		kfree(buff);
 		return -EFAULT;
 	}
@@ -545,32 +551,32 @@ static ssize_t remote_settings_file_write(struct file *file, const char __user *
 static const struct file_operations command_fops = {
 	.open =		command_file_open,
 	.release =	command_file_close,
-	.read =		command_file_read,
-	.write =	command_file_write,
+	.read_iter =	command_file_read,
+	.write_iter =	command_file_write,
 	.llseek =	generic_file_llseek,
 };
 
 static const struct file_operations event_fops = {
 	.open =		event_file_open,
 	.release =	event_file_close,
-	.read =		event_file_read,
-	.write =	event_file_write,
+	.read_iter =	event_file_read,
+	.write_iter =	event_file_write,
 	.llseek =	generic_file_llseek,
 };
 
 static const struct file_operations r_heartbeat_fops = {
 	.open =		r_heartbeat_file_open,
 	.release =	r_heartbeat_file_close,
-	.read =		r_heartbeat_file_read,
-	.write =	r_heartbeat_file_write,
+	.read_iter =	r_heartbeat_file_read,
+	.write_iter =	r_heartbeat_file_write,
 	.llseek =	generic_file_llseek,
 };
 
 static const struct file_operations remote_settings_fops = {
 	.open =		simple_open,
 	.release =	remote_settings_file_close,
-	.read =		remote_settings_file_read,
-	.write =	remote_settings_file_write,
+	.read_iter =	remote_settings_file_read,
+	.write_iter =	remote_settings_file_write,
 	.llseek =	generic_file_llseek,
 };
 
