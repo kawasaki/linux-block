@@ -451,21 +451,6 @@ const struct file_operations debugfs_full_proxy_file_operations = {
 	.open = full_proxy_open,
 };
 
-ssize_t debugfs_attr_read(struct file *file, char __user *buf,
-			size_t len, loff_t *ppos)
-{
-	struct dentry *dentry = F_DENTRY(file);
-	ssize_t ret;
-
-	ret = debugfs_file_get(dentry);
-	if (unlikely(ret))
-		return ret;
-	ret = simple_attr_read(file, buf, len, ppos);
-	debugfs_file_put(dentry);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(debugfs_attr_read);
-
 ssize_t debugfs_attr_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct dentry *dentry = F_DENTRY(iocb->ki_filp);
@@ -479,37 +464,6 @@ ssize_t debugfs_attr_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(debugfs_attr_read_iter);
-
-static ssize_t debugfs_attr_write_xsigned(struct file *file, const char __user *buf,
-			 size_t len, loff_t *ppos, bool is_signed)
-{
-	struct dentry *dentry = F_DENTRY(file);
-	ssize_t ret;
-
-	ret = debugfs_file_get(dentry);
-	if (unlikely(ret))
-		return ret;
-	if (is_signed)
-		ret = simple_attr_write_signed(file, buf, len, ppos);
-	else
-		ret = simple_attr_write(file, buf, len, ppos);
-	debugfs_file_put(dentry);
-	return ret;
-}
-
-ssize_t debugfs_attr_write(struct file *file, const char __user *buf,
-			 size_t len, loff_t *ppos)
-{
-	return debugfs_attr_write_xsigned(file, buf, len, ppos, false);
-}
-EXPORT_SYMBOL_GPL(debugfs_attr_write);
-
-ssize_t debugfs_attr_write_signed(struct file *file, const char __user *buf,
-			 size_t len, loff_t *ppos)
-{
-	return debugfs_attr_write_xsigned(file, buf, len, ppos, true);
-}
-EXPORT_SYMBOL_GPL(debugfs_attr_write_signed);
 
 static ssize_t debugfs_attr_write_iter_xsigned(struct kiocb *iocb,
 					       struct iov_iter *from,

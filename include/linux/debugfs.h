@@ -103,14 +103,8 @@ const struct file_operations *debugfs_real_fops(const struct file *filp);
 int debugfs_file_get(struct dentry *dentry);
 void debugfs_file_put(struct dentry *dentry);
 
-ssize_t debugfs_attr_read(struct file *file, char __user *buf,
-			size_t len, loff_t *ppos);
 ssize_t debugfs_attr_read_iter(struct kiocb *iocb, struct iov_iter *to);
-ssize_t debugfs_attr_write(struct file *file, const char __user *buf,
-			size_t len, loff_t *ppos);
 ssize_t debugfs_attr_write_iter(struct kiocb *iocb, struct iov_iter *from);
-ssize_t debugfs_attr_write_signed(struct file *file, const char __user *buf,
-			size_t len, loff_t *ppos);
 ssize_t debugfs_attr_write_iter_signed(struct kiocb *iocb, struct iov_iter *from);
 
 struct dentry *debugfs_rename(struct dentry *old_dir, struct dentry *old_dentry,
