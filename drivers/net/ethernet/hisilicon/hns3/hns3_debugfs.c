@@ -1257,10 +1257,9 @@ static int hns3_dbg_read_cmd(struct hns3_dbg_data *dbg_data,
 	return ops->dbg_read_cmd(dbg_data->handle, cmd, buf, len);
 }
 
-static ssize_t hns3_dbg_read(struct file *filp, char __user *buffer,
-			     size_t count, loff_t *ppos)
+static ssize_t hns3_dbg_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct hns3_dbg_data *dbg_data = filp->private_data;
+	struct hns3_dbg_data *dbg_data = iocb->ki_filp->private_data;
 	struct hnae3_handle *handle = dbg_data->handle;
 	struct hns3_nic_priv *priv = handle->priv;
 	ssize_t size = 0;
@@ -1301,8 +1300,8 @@ static ssize_t hns3_dbg_read(struct file *filp, char __user *buffer,
 			goto out;
 	}
 
-	size = simple_read_from_buffer(buffer, count, ppos, read_buf,
-				       strlen(read_buf));
+	size = simple_copy_to_iter(read_buf, &iocb->ki_pos, strlen(read_buf),
+				   to);
 	if (size > 0) {
 		mutex_unlock(&handle->dbgfs_lock);
 		return size;
@@ -1320,9 +1319,9 @@ out:
 }
 
 static const struct file_operations hns3_dbg_fops = {
-	.owner = THIS_MODULE,
-	.open  = simple_open,
-	.read  = hns3_dbg_read,
+	.owner     = THIS_MODULE,
+	.open      = simple_open,
+	.read_iter = hns3_dbg_read_iter,
 };
 
 static int hns3_dbg_bd_file_init(struct hnae3_handle *handle, u32 cmd)
