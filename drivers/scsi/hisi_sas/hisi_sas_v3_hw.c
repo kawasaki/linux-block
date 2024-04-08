@@ -3857,17 +3857,17 @@ static void debugfs_create_files_v3_hw(struct hisi_hba *hisi_hba)
 			    &debugfs_ras_v3_hw_fops);
 }
 
-static ssize_t debugfs_trigger_dump_v3_hw_write(struct file *file,
-						const char __user *user_buf,
-						size_t count, loff_t *ppos)
+static ssize_t debugfs_trigger_dump_v3_hw_write(struct kiocb *iocb,
+						struct iov_iter *from)
 {
-	struct hisi_hba *hisi_hba = file->f_inode->i_private;
+	struct hisi_hba *hisi_hba = iocb->ki_filp->f_inode->i_private;
+	size_t count = iov_iter_count(from);
 	char buf[8];
 
 	if (count > 8)
 		return -EFAULT;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	if (buf[0] != '1')
@@ -3884,7 +3884,7 @@ static ssize_t debugfs_trigger_dump_v3_hw_write(struct file *file,
 }
 
 static const struct file_operations debugfs_trigger_dump_v3_hw_fops = {
-	.write = &debugfs_trigger_dump_v3_hw_write,
+	.write_iter = debugfs_trigger_dump_v3_hw_write,
 	.owner = THIS_MODULE,
 };
 
@@ -3922,12 +3922,12 @@ static int debugfs_bist_linkrate_v3_hw_show(struct seq_file *s, void *p)
 	return 0;
 }
 
-static ssize_t debugfs_bist_linkrate_v3_hw_write(struct file *filp,
-						 const char __user *buf,
-						 size_t count, loff_t *ppos)
+static ssize_t debugfs_bist_linkrate_v3_hw_write_iter(struct kiocb *iocb,
+						      struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct hisi_hba *hisi_hba = m->private;
+	size_t count = iov_iter_count(from);
 	char kbuf[16] = {}, *pkbuf;
 	bool found = false;
 	int i;
@@ -3938,7 +3938,7 @@ static ssize_t debugfs_bist_linkrate_v3_hw_write(struct file *filp,
 	if (count >= sizeof(kbuf))
 		return -EOVERFLOW;
 
-	if (copy_from_user(kbuf, buf, count))
+	if (!copy_from_iter_full(kbuf, count, from))
 		return -EINVAL;
 
 	pkbuf = strstrip(kbuf);
@@ -3996,12 +3996,11 @@ static int debugfs_bist_code_mode_v3_hw_show(struct seq_file *s, void *p)
 	return 0;
 }
 
-static ssize_t debugfs_bist_code_mode_v3_hw_write(struct file *filp,
-						  const char __user *buf,
-						  size_t count,
-						  loff_t *ppos)
+static ssize_t debugfs_bist_code_mode_v3_hw_write_iter(struct kiocb *iocb,
+						       struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct hisi_hba *hisi_hba = m->private;
 	char kbuf[16] = {}, *pkbuf;
 	bool found = false;
@@ -4013,7 +4012,7 @@ static ssize_t debugfs_bist_code_mode_v3_hw_write(struct file *filp,
 	if (count >= sizeof(kbuf))
 		return -EINVAL;
 
-	if (copy_from_user(kbuf, buf, count))
+	if (!copy_from_iter_full(kbuf, count, from))
 		return -EOVERFLOW;
 
 	pkbuf = strstrip(kbuf);
@@ -4035,19 +4034,19 @@ static ssize_t debugfs_bist_code_mode_v3_hw_write(struct file *filp,
 }
 DEFINE_SHOW_STORE_ATTRIBUTE(debugfs_bist_code_mode_v3_hw);
 
-static ssize_t debugfs_bist_phy_v3_hw_write(struct file *filp,
-					    const char __user *buf,
-					    size_t count, loff_t *ppos)
+static ssize_t debugfs_bist_phy_v3_hw_write_iter(struct kiocb *iocb,
+						 struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct hisi_hba *hisi_hba = m->private;
+	size_t count = iov_iter_count(from);
 	unsigned int phy_no;
 	int val;
 
 	if (hisi_hba->debugfs_bist_enable)
 		return -EPERM;
 
-	val = kstrtouint_from_user(buf, count, 0, &phy_no);
+	val = kstrtouint_from_iter(from, count, 0, &phy_no);
 	if (val)
 		return val;
 
@@ -4069,19 +4068,19 @@ static int debugfs_bist_phy_v3_hw_show(struct seq_file *s, void *p)
 }
 DEFINE_SHOW_STORE_ATTRIBUTE(debugfs_bist_phy_v3_hw);
 
-static ssize_t debugfs_bist_cnt_v3_hw_write(struct file *filp,
-					const char __user *buf,
-					size_t count, loff_t *ppos)
+static ssize_t debugfs_bist_cnt_v3_hw_write_iter(struct kiocb *iocb,
+						 struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct hisi_hba *hisi_hba = m->private;
+	size_t count = iov_iter_count(from);
 	unsigned int cnt;
 	int val;
 
 	if (hisi_hba->debugfs_bist_enable)
 		return -EPERM;
 
-	val = kstrtouint_from_user(buf, count, 0, &cnt);
+	val = kstrtouint_from_iter(from, count, 0, &cnt);
 	if (val)
 		return val;
 
@@ -4129,12 +4128,12 @@ static int debugfs_bist_mode_v3_hw_show(struct seq_file *s, void *p)
 	return 0;
 }
 
-static ssize_t debugfs_bist_mode_v3_hw_write(struct file *filp,
-					     const char __user *buf,
-					     size_t count, loff_t *ppos)
+static ssize_t debugfs_bist_mode_v3_hw_write_iter(struct kiocb *iocb,
+						  struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct hisi_hba *hisi_hba = m->private;
+	size_t count = iov_iter_count(from);
 	char kbuf[16] = {}, *pkbuf;
 	bool found = false;
 	int i;
@@ -4145,7 +4144,7 @@ static ssize_t debugfs_bist_mode_v3_hw_write(struct file *filp,
 	if (count >= sizeof(kbuf))
 		return -EINVAL;
 
-	if (copy_from_user(kbuf, buf, count))
+	if (!copy_from_iter_full(kbuf, count, from))
 		return -EOVERFLOW;
 
 	pkbuf = strstrip(kbuf);
@@ -4166,16 +4165,16 @@ static ssize_t debugfs_bist_mode_v3_hw_write(struct file *filp,
 }
 DEFINE_SHOW_STORE_ATTRIBUTE(debugfs_bist_mode_v3_hw);
 
-static ssize_t debugfs_bist_enable_v3_hw_write(struct file *filp,
-					       const char __user *buf,
-					       size_t count, loff_t *ppos)
+static ssize_t debugfs_bist_enable_v3_hw_write_iter(struct kiocb *iocb,
+						    struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct hisi_hba *hisi_hba = m->private;
+	size_t count = iov_iter_count(from);
 	unsigned int enable;
 	int val;
 
-	val = kstrtouint_from_user(buf, count, 0, &enable);
+	val = kstrtouint_from_iter(from, count, 0, &enable);
 	if (val)
 		return val;
 
@@ -4217,15 +4216,15 @@ static const struct {
 	{ "SATA_6_0_GBPS" },
 };
 
-static ssize_t debugfs_v3_hw_write(struct file *filp,
-				   const char __user *buf,
-				   size_t count, loff_t *ppos)
+static ssize_t debugfs_v3_hw_write_iter(struct kiocb *iocb,
+					struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	u32 *val = m->private;
 	int res;
 
-	res = kstrtouint_from_user(buf, count, 0, val);
+	res = kstrtouint_from_iter(from, count, 0, val);
 	if (res)
 		return res;
 
@@ -4242,16 +4241,16 @@ static int debugfs_v3_hw_show(struct seq_file *s, void *p)
 }
 DEFINE_SHOW_STORE_ATTRIBUTE(debugfs_v3_hw);
 
-static ssize_t debugfs_phy_down_cnt_v3_hw_write(struct file *filp,
-						const char __user *buf,
-						size_t count, loff_t *ppos)
+static ssize_t debugfs_phy_down_cnt_v3_hw_write_iter(struct kiocb *iocb,
+						     struct iov_iter *from)
 {
-	struct seq_file *s = filp->private_data;
+	struct seq_file *s = iocb->ki_filp->private_data;
 	struct hisi_sas_phy *phy = s->private;
+	size_t count = iov_iter_count(from);
 	unsigned int set_val;
 	int res;
 
-	res = kstrtouint_from_user(buf, count, 0, &set_val);
+	res = kstrtouint_from_iter(from, count, 0, &set_val);
 	if (res)
 		return res;
 
@@ -4369,15 +4368,15 @@ static int debugfs_update_fifo_config_v3_hw(struct hisi_sas_phy *phy)
 	return 0;
 }
 
-static ssize_t debugfs_fifo_update_cfg_v3_hw_write(struct file *filp,
-						   const char __user *buf,
-						   size_t count, loff_t *ppos)
+static ssize_t debugfs_fifo_update_cfg_v3_hw_write(struct kiocb *iocb,
+						   struct iov_iter *from)
 {
-	struct hisi_sas_phy *phy = filp->private_data;
+	struct hisi_sas_phy *phy = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	bool update;
 	int val;
 
-	val = kstrtobool_from_user(buf, count, &update);
+	val = kstrtobool_from_iter(from, count, &update);
 	if (val)
 		return val;
 
@@ -4393,7 +4392,7 @@ static ssize_t debugfs_fifo_update_cfg_v3_hw_write(struct file *filp,
 
 static const struct file_operations debugfs_fifo_update_cfg_v3_hw_fops = {
 	.open = simple_open,
-	.write = debugfs_fifo_update_cfg_v3_hw_write,
+	.write_iter = debugfs_fifo_update_cfg_v3_hw_write,
 	.owner = THIS_MODULE,
 };
 
