@@ -284,6 +284,7 @@ static ssize_t raw_write(struct file *file, const char __user *buf,
 
 	return count;
 }
+FOPS_WRITE_ITER_HELPER(raw_write);
 
 static ssize_t raw_read(struct file *file, char __user *buf, size_t count,
 			loff_t *ppos)
@@ -316,11 +317,12 @@ exit:
 	mutex_unlock(&raw->list_lock);
 	return retval;
 }
+FOPS_READ_ITER_HELPER(raw_read);
 
 static const struct file_operations raw_fops = {
 	.owner		= THIS_MODULE,
-	.write		= raw_write,
-	.read		= raw_read,
+	.write_iter	= raw_write_iter,
+	.read_iter	= raw_read_iter,
 	.open		= raw_open,
 	.llseek		= noop_llseek,
 };
