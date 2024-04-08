@@ -209,8 +209,8 @@ static int rvu_dbg_open_##name(struct inode *inode, struct file *file) \
 static const struct file_operations rvu_dbg_##name##_fops = { \
 	.owner		= THIS_MODULE, \
 	.open		= rvu_dbg_open_##name, \
-	.read		= seq_read, \
-	.write		= rvu_dbg_##write_op, \
+	.read_iter	= seq_read_iter, \
+	.write_iter	= rvu_dbg_##write_op, \
 	.llseek		= seq_lseek, \
 	.release	= single_release, \
 }
@@ -219,8 +219,8 @@ static const struct file_operations rvu_dbg_##name##_fops = { \
 static const struct file_operations rvu_dbg_##name##_fops = { \
 	.owner = THIS_MODULE, \
 	.open = simple_open, \
-	.read = rvu_dbg_##read_op, \
-	.write = rvu_dbg_##write_op \
+	.read_iter = rvu_dbg_##read_op, \
+	.write_iter = rvu_dbg_##write_op \
 }
 
 static void print_nix_qsize(struct seq_file *filp, struct rvu_pfvf *pfvf);
@@ -572,11 +572,10 @@ static void rvu_dbg_mcs_init(struct rvu *rvu)
 
 #define LMT_MAPTBL_ENTRY_SIZE 16
 /* Dump LMTST map table */
-static ssize_t rvu_dbg_lmtst_map_table_display(struct file *filp,
-					       char __user *buffer,
-					       size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_lmtst_map_table_display(struct kiocb *iocb,
+					       struct iov_iter *to)
 {
-	struct rvu *rvu = filp->private_data;
+	struct rvu *rvu = iocb->ki_filp->private_data;
 	u64 lmt_addr, val, tbl_base;
 	int pf, vf, num_vfs, hw_vfs;
 	void __iomem *lmt_map_base;
@@ -585,9 +584,10 @@ static ssize_t rvu_dbg_lmtst_map_table_display(struct file *filp,
 	int index = 0;
 	char *buf;
 	int ret;
+	size_t count = iov_iter_count(to);
 
 	/* don't allow partial reads */
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	buf = kzalloc(buf_size, GFP_KERNEL);
@@ -649,15 +649,15 @@ static ssize_t rvu_dbg_lmtst_map_table_display(struct file *filp,
 	off +=	scnprintf(&buf[off], buf_size - 1 - off, "\n");
 
 	ret = min(off, count);
-	if (copy_to_user(buffer, buf, ret))
-		ret = -EFAULT;
+	if (!copy_to_iter_full(buf, ret, to))
+		return -EFAULT;
 	kfree(buf);
 
 	iounmap(lmt_map_base);
 	if (ret < 0)
 		return ret;
 
-	*ppos = ret;
+	iocb->ki_pos = ret;
 	return ret;
 }
 
@@ -731,22 +731,21 @@ static int get_max_column_width(struct rvu *rvu)
 }
 
 /* Dumps current provisioning status of all RVU block LFs */
-static ssize_t rvu_dbg_rsrc_attach_status(struct file *filp,
-					  char __user *buffer,
-					  size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_rsrc_attach_status(struct kiocb *iocb,
+					  struct iov_iter *to)
 {
 	int index, off = 0, flag = 0, len = 0, i = 0;
-	struct rvu *rvu = filp->private_data;
-	int bytes_not_copied = 0;
+	struct rvu *rvu = iocb->ki_filp->private_data;
 	struct rvu_block block;
 	int pf, vf, pcifunc;
 	int buf_size = 2048;
 	int lf_str_size;
 	char *lfs;
 	char *buf;
+	bool ret;
 
 	/* don't allow partial reads */
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	buf = kzalloc(buf_size, GFP_KERNEL);
@@ -771,12 +770,13 @@ static ssize_t rvu_dbg_rsrc_attach_status(struct file *filp,
 		}
 
 	off += scnprintf(&buf[off], buf_size - 1 - off, "\n");
-	bytes_not_copied = copy_to_user(buffer + (i * off), buf, off);
-	if (bytes_not_copied)
+	iov_iter_advance(to, i * off);
+	ret = !copy_to_iter_full(buf, off, to);
+	if (ret)
 		goto out;
 
 	i++;
-	*ppos += off;
+	iocb->ki_pos += off;
 	for (pf = 0; pf < rvu->hw->total_pfs; pf++) {
 		for (vf = 0; vf <= rvu->hw->total_vfs; vf++) {
 			off = 0;
@@ -813,14 +813,13 @@ static ssize_t rvu_dbg_rsrc_attach_status(struct file *filp,
 			if (flag) {
 				off +=	scnprintf(&buf[off],
 						  buf_size - 1 - off, "\n");
-				bytes_not_copied = copy_to_user(buffer +
-								(i * off),
-								buf, off);
-				if (bytes_not_copied)
+				iov_iter_advance(to, i * off);
+				ret = !copy_to_iter_full(buf, off, to);
+				if (ret)
 					goto out;
 
 				i++;
-				*ppos += off;
+				iocb->ki_pos += off;
 			}
 		}
 	}
@@ -828,10 +827,10 @@ static ssize_t rvu_dbg_rsrc_attach_status(struct file *filp,
 out:
 	kfree(lfs);
 	kfree(buf);
-	if (bytes_not_copied)
+	if (!ret)
 		return -EFAULT;
 
-	return *ppos;
+	return iocb->ki_pos;
 }
 
 RVU_DEBUG_FOPS(rsrc_status, rsrc_attach_status, NULL);
@@ -989,22 +988,25 @@ static int rvu_dbg_qsize_display(struct seq_file *filp, void *unsused,
 	return 0;
 }
 
-static ssize_t rvu_dbg_qsize_write(struct file *filp,
-				   const char __user *buffer, size_t count,
-				   loff_t *ppos, int blktype)
+static ssize_t rvu_dbg_qsize_write(struct kiocb *iocb, struct iov_iter *from,
+				   int blktype)
 {
 	char *blk_string = (blktype == BLKTYPE_NPA) ? "npa" : "nix";
-	struct seq_file *seqfile = filp->private_data;
+	struct seq_file *seqfile = iocb->ki_filp->private_data;
 	char *cmd_buf, *cmd_buf_tmp, *subtoken;
 	struct rvu *rvu = seqfile->private;
 	struct dentry *current_dir;
 	int blkaddr;
 	u16 pcifunc;
 	int ret, lf;
+	size_t count = iov_iter_count(from);
 
-	cmd_buf = memdup_user_nul(buffer, count);
-	if (IS_ERR(cmd_buf))
+	cmd_buf = kmalloc(count + 1, GFP_KERNEL);
+	if (!cmd_buf)
 		return -ENOMEM;
+
+	if (!copy_from_iter_full(cmd_buf, count, from))
+		return -EFAULT;
 
 	cmd_buf_tmp = strchr(cmd_buf, '\n');
 	if (cmd_buf_tmp) {
@@ -1026,7 +1028,7 @@ static ssize_t rvu_dbg_qsize_write(struct file *filp,
 	if (blktype == BLKTYPE_NPA) {
 		blkaddr = BLKADDR_NPA;
 	} else {
-		current_dir = filp->f_path.dentry->d_parent;
+		current_dir = iocb->ki_filp->f_path.dentry->d_parent;
 		blkaddr = (!strcmp(current_dir->d_name.name, "nix1") ?
 				   BLKADDR_NIX1 : BLKADDR_NIX0);
 	}
@@ -1045,12 +1047,10 @@ qsize_write_done:
 	return ret ? ret : count;
 }
 
-static ssize_t rvu_dbg_npa_qsize_write(struct file *filp,
-				       const char __user *buffer,
-				       size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_npa_qsize_write(struct kiocb *iocb,
+				       struct iov_iter *from)
 {
-	return rvu_dbg_qsize_write(filp, buffer, count, ppos,
-					    BLKTYPE_NPA);
+	return rvu_dbg_qsize_write(iocb, from, BLKTYPE_NPA);
 }
 
 static int rvu_dbg_npa_qsize_display(struct seq_file *filp, void *unused)
@@ -1293,16 +1293,14 @@ static int write_npa_ctx(struct rvu *rvu, bool all,
 }
 
 static int parse_cmd_buffer_ctx(char *cmd_buf, size_t *count,
-				const char __user *buffer, int *npalf,
+				struct iov_iter *from, int *npalf,
 				int *id, bool *all)
 {
-	int bytes_not_copied;
 	char *cmd_buf_tmp;
 	char *subtoken;
 	int ret;
 
-	bytes_not_copied = copy_from_user(cmd_buf, buffer, *count);
-	if (bytes_not_copied)
+	if (!copy_from_iter_full(cmd_buf, *count, from))
 		return -EFAULT;
 
 	cmd_buf[*count] = '\0';
@@ -1330,24 +1328,25 @@ static int parse_cmd_buffer_ctx(char *cmd_buf, size_t *count,
 	return ret;
 }
 
-static ssize_t rvu_dbg_npa_ctx_write(struct file *filp,
-				     const char __user *buffer,
-				     size_t count, loff_t *ppos, int ctype)
+static ssize_t rvu_dbg_npa_ctx_write(struct kiocb *iocb,
+				     struct iov_iter *from,
+				     int ctype)
 {
 	char *cmd_buf, *ctype_string = (ctype == NPA_AQ_CTYPE_AURA) ?
 					"aura" : "pool";
-	struct seq_file *seqfp = filp->private_data;
+	struct seq_file *seqfp = iocb->ki_filp->private_data;
 	struct rvu *rvu = seqfp->private;
 	int npalf, id = 0, ret;
 	bool all = false;
+	size_t count = iov_iter_count(from);
 
-	if ((*ppos != 0) || !count)
+	if (iocb->ki_pos != 0 || !count)
 		return -EINVAL;
 
 	cmd_buf = kzalloc(count + 1, GFP_KERNEL);
 	if (!cmd_buf)
 		return count;
-	ret = parse_cmd_buffer_ctx(cmd_buf, &count, buffer,
+	ret = parse_cmd_buffer_ctx(cmd_buf, &count, from,
 				   &npalf, &id, &all);
 	if (ret < 0) {
 		dev_info(rvu->dev,
@@ -1362,12 +1361,10 @@ done:
 	return ret ? ret : count;
 }
 
-static ssize_t rvu_dbg_npa_aura_ctx_write(struct file *filp,
-					  const char __user *buffer,
-					  size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_npa_aura_ctx_write(struct kiocb *iocb,
+					  struct iov_iter *from)
 {
-	return rvu_dbg_npa_ctx_write(filp, buffer, count, ppos,
-				     NPA_AQ_CTYPE_AURA);
+	return rvu_dbg_npa_ctx_write(iocb, from, NPA_AQ_CTYPE_AURA);
 }
 
 static int rvu_dbg_npa_aura_ctx_display(struct seq_file *filp, void *unused)
@@ -1377,12 +1374,10 @@ static int rvu_dbg_npa_aura_ctx_display(struct seq_file *filp, void *unused)
 
 RVU_DEBUG_SEQ_FOPS(npa_aura_ctx, npa_aura_ctx_display, npa_aura_ctx_write);
 
-static ssize_t rvu_dbg_npa_pool_ctx_write(struct file *filp,
-					  const char __user *buffer,
-					  size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_npa_pool_ctx_write(struct kiocb *iocb,
+					  struct iov_iter *from)
 {
-	return rvu_dbg_npa_ctx_write(filp, buffer, count, ppos,
-				     NPA_AQ_CTYPE_POOL);
+	return rvu_dbg_npa_ctx_write(iocb, from, NPA_AQ_CTYPE_POOL);
 }
 
 static int rvu_dbg_npa_pool_ctx_display(struct seq_file *filp, void *unused)
@@ -1679,11 +1674,11 @@ static int rvu_dbg_nix_tm_tree_display(struct seq_file *m, void *unused)
 	return 0;
 }
 
-static ssize_t rvu_dbg_nix_tm_tree_write(struct file *filp,
-					 const char __user *buffer,
-					 size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_nix_tm_tree_write(struct kiocb *iocb,
+					 struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct nix_hw *nix_hw = m->private;
 	struct rvu *rvu = nix_hw->rvu;
 	struct rvu_pfvf *pfvf;
@@ -1691,7 +1686,7 @@ static ssize_t rvu_dbg_nix_tm_tree_write(struct file *filp,
 	u64 nixlf;
 	int ret;
 
-	ret = kstrtoull_from_user(buffer, count, 10, &nixlf);
+	ret = kstrtoull_from_iter(from, count, 10, &nixlf);
 	if (ret)
 		return ret;
 
@@ -1936,11 +1931,11 @@ static int rvu_dbg_nix_tm_topo_display(struct seq_file *m, void *unused)
 	return 0;
 }
 
-static ssize_t rvu_dbg_nix_tm_topo_write(struct file *filp,
-					 const char __user *buffer,
-					 size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_nix_tm_topo_write(struct kiocb *iocb,
+					 struct iov_iter *from)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct nix_hw *nix_hw = m->private;
 	struct rvu *rvu = nix_hw->rvu;
 	struct rvu_pfvf *pfvf;
@@ -1948,7 +1943,7 @@ static ssize_t rvu_dbg_nix_tm_topo_write(struct file *filp,
 	u64 nixlf;
 	int ret;
 
-	ret = kstrtoull_from_user(buffer, count, 10, &nixlf);
+	ret = kstrtoull_from_iter(from, count, 10, &nixlf);
 	if (ret)
 		return ret;
 
@@ -2383,19 +2378,19 @@ static int write_nix_queue_ctx(struct rvu *rvu, bool all, int nixlf,
 	return 0;
 }
 
-static ssize_t rvu_dbg_nix_queue_ctx_write(struct file *filp,
-					   const char __user *buffer,
-					   size_t count, loff_t *ppos,
+static ssize_t rvu_dbg_nix_queue_ctx_write(struct kiocb *iocb,
+					   struct iov_iter *from,
 					   int ctype)
 {
-	struct seq_file *m = filp->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct nix_hw *nix_hw = m->private;
 	struct rvu *rvu = nix_hw->rvu;
 	char *cmd_buf, *ctype_string;
 	int nixlf, id = 0, ret;
 	bool all = false;
+	size_t count = iov_iter_count(from);
 
-	if ((*ppos != 0) || !count)
+	if (iocb->ki_pos != 0 || !count)
 		return -EINVAL;
 
 	switch (ctype) {
@@ -2417,7 +2412,7 @@ static ssize_t rvu_dbg_nix_queue_ctx_write(struct file *filp,
 	if (!cmd_buf)
 		return count;
 
-	ret = parse_cmd_buffer_ctx(cmd_buf, &count, buffer,
+	ret = parse_cmd_buffer_ctx(cmd_buf, &count, from,
 				   &nixlf, &id, &all);
 	if (ret < 0) {
 		dev_info(rvu->dev,
@@ -2433,12 +2428,10 @@ done:
 	return ret ? ret : count;
 }
 
-static ssize_t rvu_dbg_nix_sq_ctx_write(struct file *filp,
-					const char __user *buffer,
-					size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_nix_sq_ctx_write(struct kiocb *iocb,
+					struct iov_iter *from)
 {
-	return rvu_dbg_nix_queue_ctx_write(filp, buffer, count, ppos,
-					    NIX_AQ_CTYPE_SQ);
+	return rvu_dbg_nix_queue_ctx_write(iocb, from, NIX_AQ_CTYPE_SQ);
 }
 
 static int rvu_dbg_nix_sq_ctx_display(struct seq_file *filp, void *unused)
@@ -2448,12 +2441,10 @@ static int rvu_dbg_nix_sq_ctx_display(struct seq_file *filp, void *unused)
 
 RVU_DEBUG_SEQ_FOPS(nix_sq_ctx, nix_sq_ctx_display, nix_sq_ctx_write);
 
-static ssize_t rvu_dbg_nix_rq_ctx_write(struct file *filp,
-					const char __user *buffer,
-					size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_nix_rq_ctx_write(struct kiocb *iocb,
+					struct iov_iter *from)
 {
-	return rvu_dbg_nix_queue_ctx_write(filp, buffer, count, ppos,
-					    NIX_AQ_CTYPE_RQ);
+	return rvu_dbg_nix_queue_ctx_write(iocb, from, NIX_AQ_CTYPE_RQ);
 }
 
 static int rvu_dbg_nix_rq_ctx_display(struct seq_file *filp, void  *unused)
@@ -2463,12 +2454,10 @@ static int rvu_dbg_nix_rq_ctx_display(struct seq_file *filp, void  *unused)
 
 RVU_DEBUG_SEQ_FOPS(nix_rq_ctx, nix_rq_ctx_display, nix_rq_ctx_write);
 
-static ssize_t rvu_dbg_nix_cq_ctx_write(struct file *filp,
-					const char __user *buffer,
-					size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_nix_cq_ctx_write(struct kiocb *iocb,
+					struct iov_iter *from)
 {
-	return rvu_dbg_nix_queue_ctx_write(filp, buffer, count, ppos,
-					    NIX_AQ_CTYPE_CQ);
+	return rvu_dbg_nix_queue_ctx_write(iocb, from, NIX_AQ_CTYPE_CQ);
 }
 
 static int rvu_dbg_nix_cq_ctx_display(struct seq_file *filp, void *unused)
@@ -2515,12 +2504,10 @@ static void print_nix_qsize(struct seq_file *filp, struct rvu_pfvf *pfvf)
 				     "sq");
 }
 
-static ssize_t rvu_dbg_nix_qsize_write(struct file *filp,
-				       const char __user *buffer,
-				       size_t count, loff_t *ppos)
+static ssize_t rvu_dbg_nix_qsize_write(struct kiocb *iocb,
+				       struct iov_iter *from)
 {
-	return rvu_dbg_qsize_write(filp, buffer, count, ppos,
-				   BLKTYPE_NIX);
+	return rvu_dbg_qsize_write(iocb, from, BLKTYPE_NIX);
 }
 
 static int rvu_dbg_nix_qsize_display(struct seq_file *filp, void *unused)
