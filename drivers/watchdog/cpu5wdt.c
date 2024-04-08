@@ -174,9 +174,9 @@ static long cpu5wdt_ioctl(struct file *file, unsigned int cmd,
 	return 0;
 }
 
-static ssize_t cpu5wdt_write(struct file *file, const char __user *buf,
-						size_t count, loff_t *ppos)
+static ssize_t cpu5wdt_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	size_t count = iov_iter_count(from);
 	if (!count)
 		return -EIO;
 	cpu5wdt_reset();
@@ -188,7 +188,7 @@ static const struct file_operations cpu5wdt_fops = {
 	.unlocked_ioctl	= cpu5wdt_ioctl,
 	.compat_ioctl	= compat_ptr_ioctl,
 	.open		= cpu5wdt_open,
-	.write		= cpu5wdt_write,
+	.write_iter	= cpu5wdt_write,
 	.release	= cpu5wdt_release,
 };
 
