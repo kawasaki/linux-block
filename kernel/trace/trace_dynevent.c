@@ -244,14 +244,15 @@ static ssize_t dyn_event_write(struct file *file, const char __user *buffer,
 	return trace_parse_run_command(file, buffer, count, ppos,
 				       create_dyn_event);
 }
+FOPS_WRITE_ITER_HELPER(dyn_event_write);
 
 static const struct file_operations dynamic_events_ops = {
 	.owner          = THIS_MODULE,
 	.open           = dyn_event_open,
-	.read           = seq_read,
+	.read_iter      = seq_read_iter,
 	.llseek         = seq_lseek,
 	.release        = seq_release,
-	.write		= dyn_event_write,
+	.write_iter	= dyn_event_write_iter,
 };
 
 /* Make a tracefs interface for controlling dynamic events */

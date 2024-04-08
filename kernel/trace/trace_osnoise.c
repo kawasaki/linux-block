@@ -2219,26 +2219,24 @@ static int osnoise_options_open(struct inode *inode, struct file *file)
 
 /**
  * osnoise_options_write - Write function for "options" entry
- * @filp: The active open file structure
- * @ubuf: The user buffer that contains the value to write
- * @cnt: The maximum number of bytes to write to "file"
- * @ppos: The current position in @file
+ * @iocb: Metadata for IO
+ * @from: The user buffer that contains the value to write
  *
  * Writing the option name sets the option, writing the "NO_"
  * prefix in front of the option name disables it.
  *
  * Writing "DEFAULTS" resets the option values to the default ones.
  */
-static ssize_t osnoise_options_write(struct file *filp, const char __user *ubuf,
-				     size_t cnt, loff_t *ppos)
+static ssize_t osnoise_options_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	int running, option, enable, retval;
+	size_t cnt = iov_iter_count(from);
 	char buf[256], *option_str;
 
 	if (cnt >= 256)
 		return -EINVAL;
 
-	if (copy_from_user(buf, ubuf, cnt))
+	if (!copy_from_iter_full(buf, cnt, from))
 		return -EFAULT;
 
 	buf[cnt] = 0;
@@ -2302,10 +2300,9 @@ static ssize_t osnoise_options_write(struct file *filp, const char __user *ubuf,
  *
  * Prints the "cpus" output into the user-provided buffer.
  */
-static ssize_t
-osnoise_cpus_read(struct file *filp, char __user *ubuf, size_t count,
-		  loff_t *ppos)
+static ssize_t osnoise_cpus_read(struct kiocb *iocb, struct iov_iter *to)
 {
+	ssize_t count = iov_iter_count(to);
 	char *mask_str;
 	int len;
 
@@ -2324,7 +2321,7 @@ osnoise_cpus_read(struct file *filp, char __user *ubuf, size_t count,
 		goto out_free;
 	}
 
-	count = simple_read_from_buffer(ubuf, count, ppos, mask_str, len);
+	count = simple_copy_to_iter(mask_str, &iocb->ki_pos, len, to);
 
 out_free:
 	kfree(mask_str);
@@ -2350,18 +2347,17 @@ out_unlock:
  * other CPUs. For instance, one might run osnoise in one HT CPU
  * while observing what is running on the sibling HT CPU.
  */
-static ssize_t
-osnoise_cpus_write(struct file *filp, const char __user *ubuf, size_t count,
-		   loff_t *ppos)
+static ssize_t osnoise_cpus_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	cpumask_var_t osnoise_cpumask_new;
+	size_t count = iov_iter_count(from);
 	int running, err;
 	char buf[256];
 
 	if (count >= 256)
 		return -EINVAL;
 
-	if (copy_from_user(buf, ubuf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	if (!zalloc_cpumask_var(&osnoise_cpumask_new, GFP_KERNEL))
@@ -2481,11 +2477,9 @@ static int timerlat_fd_open(struct inode *inode, struct file *file)
  *
  * Prints 1 on timerlat, the number of interferences on osnoise, -1 on error.
  */
-static ssize_t
-timerlat_fd_read(struct file *file, char __user *ubuf, size_t count,
-		  loff_t *ppos)
+static ssize_t timerlat_fd_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	long cpu = (long) file->private_data;
+	long cpu = (long) iocb->ki_filp->private_data;
 	struct osnoise_variables *osn_var;
 	struct timerlat_variables *tlat;
 	struct timerlat_sample s;
@@ -2687,7 +2681,7 @@ static struct trace_min_max_param timerlat_period = {
 
 static const struct file_operations timerlat_fd_fops = {
 	.open		= timerlat_fd_open,
-	.read		= timerlat_fd_read,
+	.read_iter	= timerlat_fd_read,
 	.release	= timerlat_fd_release,
 	.llseek		= generic_file_llseek,
 };
@@ -2695,17 +2689,17 @@ static const struct file_operations timerlat_fd_fops = {
 
 static const struct file_operations cpus_fops = {
 	.open		= tracing_open_generic,
-	.read		= osnoise_cpus_read,
-	.write		= osnoise_cpus_write,
+	.read_iter	= osnoise_cpus_read,
+	.write_iter	= osnoise_cpus_write,
 	.llseek		= generic_file_llseek,
 };
 
 static const struct file_operations osnoise_options_fops = {
 	.open		= osnoise_options_open,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= seq_release,
-	.write		= osnoise_options_write
+	.write_iter	= osnoise_options_write
 };
 
 #ifdef CONFIG_TIMERLAT_TRACER

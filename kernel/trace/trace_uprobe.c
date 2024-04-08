@@ -809,14 +809,15 @@ static ssize_t probes_write(struct file *file, const char __user *buffer,
 	return trace_parse_run_command(file, buffer, count, ppos,
 					create_or_delete_trace_uprobe);
 }
+FOPS_WRITE_ITER_HELPER(probes_write);
 
 static const struct file_operations uprobe_events_ops = {
 	.owner		= THIS_MODULE,
 	.open		= probes_open,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= seq_release,
-	.write		= probes_write,
+	.write_iter	= probes_write_iter,
 };
 
 /* Probes profiling interfaces */
@@ -863,7 +864,7 @@ static int profile_open(struct inode *inode, struct file *file)
 static const struct file_operations uprobe_profile_ops = {
 	.owner		= THIS_MODULE,
 	.open		= profile_open,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= seq_release,
 };

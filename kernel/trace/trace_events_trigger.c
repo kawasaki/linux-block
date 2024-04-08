@@ -272,11 +272,11 @@ int trigger_process_regex(struct trace_event_file *file, char *buff)
 	return ret;
 }
 
-static ssize_t event_trigger_regex_write(struct file *file,
-					 const char __user *ubuf,
-					 size_t cnt, loff_t *ppos)
+static ssize_t event_trigger_regex_write(struct kiocb *iocb,
+					 struct iov_iter *from)
 {
 	struct trace_event_file *event_file;
+	size_t cnt = iov_iter_count(from);
 	ssize_t ret;
 	char *buf;
 
@@ -286,14 +286,14 @@ static ssize_t event_trigger_regex_write(struct file *file,
 	if (cnt >= PAGE_SIZE)
 		return -EINVAL;
 
-	buf = memdup_user_nul(ubuf, cnt);
+	buf = iterdup_nul(from, cnt);
 	if (IS_ERR(buf))
 		return PTR_ERR(buf);
 
 	strim(buf);
 
 	mutex_lock(&event_mutex);
-	event_file = event_file_file(file);
+	event_file = event_file_file(iocb->ki_filp);
 	if (unlikely(!event_file)) {
 		mutex_unlock(&event_mutex);
 		kfree(buf);
@@ -306,7 +306,7 @@ static ssize_t event_trigger_regex_write(struct file *file,
 	if (ret < 0)
 		goto out;
 
-	*ppos += cnt;
+	iocb->ki_pos += cnt;
 	ret = cnt;
  out:
 	return ret;
@@ -324,11 +324,9 @@ static int event_trigger_regex_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t
-event_trigger_write(struct file *filp, const char __user *ubuf,
-		    size_t cnt, loff_t *ppos)
+static ssize_t event_trigger_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	return event_trigger_regex_write(filp, ubuf, cnt, ppos);
+	return event_trigger_regex_write(iocb, from);
 }
 
 static int
@@ -346,8 +344,8 @@ event_trigger_release(struct inode *inode, struct file *file)
 
 const struct file_operations event_trigger_fops = {
 	.open = event_trigger_open,
-	.read = seq_read,
-	.write = event_trigger_write,
+	.read_iter = seq_read_iter,
+	.write_iter = event_trigger_write,
 	.llseek = tracing_lseek,
 	.release = event_trigger_release,
 };

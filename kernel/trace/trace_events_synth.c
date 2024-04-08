@@ -2286,11 +2286,12 @@ static ssize_t synth_events_write(struct file *file,
 	return trace_parse_run_command(file, buffer, count, ppos,
 				       create_or_delete_synth_event);
 }
+FOPS_WRITE_ITER_HELPER(synth_events_write);
 
 static const struct file_operations synth_events_fops = {
 	.open           = synth_events_open,
-	.write		= synth_events_write,
-	.read           = seq_read,
+	.write_iter	= synth_events_write_iter,
+	.read_iter      = seq_read_iter,
 	.llseek         = seq_lseek,
 	.release        = seq_release,
 };

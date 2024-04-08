@@ -1215,6 +1215,7 @@ ftrace_event_write(struct file *file, const char __user *ubuf,
 
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(ftrace_event_write);
 
 static void *
 t_next(struct seq_file *m, void *v, loff_t *pos)
@@ -1377,16 +1378,14 @@ static void p_stop(struct seq_file *m, void *p)
 	mutex_unlock(&event_mutex);
 }
 
-static ssize_t
-event_enable_read(struct file *filp, char __user *ubuf, size_t cnt,
-		  loff_t *ppos)
+static ssize_t event_enable_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct trace_event_file *file;
 	unsigned long flags;
 	char buf[4] = "0";
 
 	mutex_lock(&event_mutex);
-	file = event_file_file(filp);
+	file = event_file_file(iocb->ki_filp);
 	if (likely(file))
 		flags = file->flags;
 	mutex_unlock(&event_mutex);
@@ -1404,7 +1403,7 @@ event_enable_read(struct file *filp, char __user *ubuf, size_t cnt,
 
 	strcat(buf, "\n");
 
-	return simple_read_from_buffer(ubuf, cnt, ppos, buf, strlen(buf));
+	return simple_copy_to_iter(buf, &iocb->ki_pos, strlen(buf), to);
 }
 
 static ssize_t
@@ -1444,20 +1443,18 @@ event_enable_write(struct file *filp, const char __user *ubuf, size_t cnt,
 
 	return ret ? ret : cnt;
 }
+FOPS_WRITE_ITER_HELPER(event_enable_write);
 
-static ssize_t
-system_enable_read(struct file *filp, char __user *ubuf, size_t cnt,
-		   loff_t *ppos)
+static ssize_t system_enable_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	const char set_to_char[4] = { '?', '0', '1', 'X' };
-	struct trace_subsystem_dir *dir = filp->private_data;
+	struct trace_subsystem_dir *dir = iocb->ki_filp->private_data;
 	struct event_subsystem *system = dir->subsystem;
 	struct trace_event_call *call;
 	struct trace_event_file *file;
 	struct trace_array *tr = dir->tr;
 	char buf[2];
 	int set = 0;
-	int ret;
 
 	mutex_lock(&event_mutex);
 	list_for_each_entry(file, &tr->events, list) {
@@ -1487,9 +1484,7 @@ system_enable_read(struct file *filp, char __user *ubuf, size_t cnt,
 	buf[0] = set_to_char[set];
 	buf[1] = '\n';
 
-	ret = simple_read_from_buffer(ubuf, cnt, ppos, buf, 2);
-
-	return ret;
+	return simple_copy_to_iter(buf, &iocb->ki_pos, 2, to);
 }
 
 static ssize_t
@@ -1531,6 +1526,7 @@ out:
 
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(system_enable_write);
 
 enum {
 	FORMAT_HEADER		= 1,
@@ -1675,10 +1671,9 @@ static int trace_format_open(struct inode *inode, struct file *file)
 }
 
 #ifdef CONFIG_PERF_EVENTS
-static ssize_t
-event_id_read(struct file *filp, char __user *ubuf, size_t cnt, loff_t *ppos)
+static ssize_t event_id_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	int id = (long)event_file_data(filp);
+	int id = (long)event_file_data(iocb->ki_filp);
 	char buf[32];
 	int len;
 
@@ -1687,19 +1682,17 @@ event_id_read(struct file *filp, char __user *ubuf, size_t cnt, loff_t *ppos)
 
 	len = sprintf(buf, "%d\n", id);
 
-	return simple_read_from_buffer(ubuf, cnt, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 #endif
 
-static ssize_t
-event_filter_read(struct file *filp, char __user *ubuf, size_t cnt,
-		  loff_t *ppos)
+static ssize_t event_filter_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct trace_event_file *file;
 	struct trace_seq *s;
 	int r = -ENODEV;
 
-	if (*ppos)
+	if (iocb->ki_pos)
 		return 0;
 
 	s = kmalloc(sizeof(*s), GFP_KERNEL);
@@ -1710,14 +1703,14 @@ event_filter_read(struct file *filp, char __user *ubuf, size_t cnt,
 	trace_seq_init(s);
 
 	mutex_lock(&event_mutex);
-	file = event_file_file(filp);
+	file = event_file_file(iocb->ki_filp);
 	if (file)
 		print_event_filter(file, s);
 	mutex_unlock(&event_mutex);
 
 	if (file)
-		r = simple_read_from_buffer(ubuf, cnt, ppos,
-					    s->buffer, trace_seq_used(s));
+		r = simple_copy_to_iter(s->buffer, &iocb->ki_pos,
+					trace_seq_used(s), to);
 
 	kfree(s);
 
@@ -1757,6 +1750,7 @@ event_filter_write(struct file *filp, const char __user *ubuf, size_t cnt,
 
 	return cnt;
 }
+FOPS_WRITE_ITER_HELPER(event_filter_write);
 
 static LIST_HEAD(event_subsystems);
 
@@ -1850,16 +1844,14 @@ static int subsystem_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t
-subsystem_filter_read(struct file *filp, char __user *ubuf, size_t cnt,
-		      loff_t *ppos)
+static ssize_t subsystem_filter_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct trace_subsystem_dir *dir = filp->private_data;
+	struct trace_subsystem_dir *dir = iocb->ki_filp->private_data;
 	struct event_subsystem *system = dir->subsystem;
 	struct trace_seq *s;
 	int r;
 
-	if (*ppos)
+	if (iocb->ki_pos)
 		return 0;
 
 	s = kmalloc(sizeof(*s), GFP_KERNEL);
@@ -1869,8 +1861,7 @@ subsystem_filter_read(struct file *filp, char __user *ubuf, size_t cnt,
 	trace_seq_init(s);
 
 	print_subsystem_event_filter(system, s);
-	r = simple_read_from_buffer(ubuf, cnt, ppos,
-				    s->buffer, trace_seq_used(s));
+	r = simple_copy_to_iter(s->buffer, &iocb->ki_pos, trace_seq_used(s), to);
 
 	kfree(s);
 
@@ -1901,15 +1892,15 @@ subsystem_filter_write(struct file *filp, const char __user *ubuf, size_t cnt,
 
 	return cnt;
 }
+FOPS_WRITE_ITER_HELPER(subsystem_filter_write);
 
-static ssize_t
-show_header_page_file(struct file *filp, char __user *ubuf, size_t cnt, loff_t *ppos)
+static ssize_t show_header_page_file(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct trace_array *tr = filp->private_data;
+	struct trace_array *tr = iocb->ki_filp->private_data;
 	struct trace_seq *s;
 	int r;
 
-	if (*ppos)
+	if (iocb->ki_pos)
 		return 0;
 
 	s = kmalloc(sizeof(*s), GFP_KERNEL);
@@ -1919,21 +1910,19 @@ show_header_page_file(struct file *filp, char __user *ubuf, size_t cnt, loff_t *
 	trace_seq_init(s);
 
 	ring_buffer_print_page_header(tr->array_buffer.buffer, s);
-	r = simple_read_from_buffer(ubuf, cnt, ppos,
-				    s->buffer, trace_seq_used(s));
+	r = simple_copy_to_iter(s->buffer, &iocb->ki_pos, trace_seq_used(s), to);
 
 	kfree(s);
 
 	return r;
 }
 
-static ssize_t
-show_header_event_file(struct file *filp, char __user *ubuf, size_t cnt, loff_t *ppos)
+static ssize_t show_header_event_file(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct trace_seq *s;
 	int r;
 
-	if (*ppos)
+	if (iocb->ki_pos)
 		return 0;
 
 	s = kmalloc(sizeof(*s), GFP_KERNEL);
@@ -1943,8 +1932,7 @@ show_header_event_file(struct file *filp, char __user *ubuf, size_t cnt, loff_t 
 	trace_seq_init(s);
 
 	ring_buffer_print_entry_header(s);
-	r = simple_read_from_buffer(ubuf, cnt, ppos,
-				    s->buffer, trace_seq_used(s));
+	r = simple_copy_to_iter(s->buffer, &iocb->ki_pos, trace_seq_used(s), to);
 
 	kfree(s);
 
@@ -2074,6 +2062,7 @@ ftrace_event_pid_write(struct file *filp, const char __user *ubuf,
 {
 	return event_pid_write(filp, ubuf, cnt, ppos, TRACE_PIDS);
 }
+FOPS_WRITE_ITER_HELPER(ftrace_event_pid_write);
 
 static ssize_t
 ftrace_event_npid_write(struct file *filp, const char __user *ubuf,
@@ -2081,6 +2070,7 @@ ftrace_event_npid_write(struct file *filp, const char __user *ubuf,
 {
 	return event_pid_write(filp, ubuf, cnt, ppos, TRACE_NO_PIDS);
 }
+FOPS_WRITE_ITER_HELPER(ftrace_event_npid_write);
 
 static int ftrace_event_avail_open(struct inode *inode, struct file *file);
 static int ftrace_event_set_open(struct inode *inode, struct file *file);
@@ -2118,99 +2108,99 @@ static const struct seq_operations show_set_no_pid_seq_ops = {
 
 static const struct file_operations ftrace_avail_fops = {
 	.open = ftrace_event_avail_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
 static const struct file_operations ftrace_set_event_fops = {
 	.open = ftrace_event_set_open,
-	.read = seq_read,
-	.write = ftrace_event_write,
+	.read_iter = seq_read_iter,
+	.write_iter = ftrace_event_write_iter,
 	.llseek = seq_lseek,
 	.release = ftrace_event_release,
 };
 
 static const struct file_operations ftrace_set_event_pid_fops = {
 	.open = ftrace_event_set_pid_open,
-	.read = seq_read,
-	.write = ftrace_event_pid_write,
+	.read_iter = seq_read_iter,
+	.write_iter = ftrace_event_pid_write_iter,
 	.llseek = seq_lseek,
 	.release = ftrace_event_release,
 };
 
 static const struct file_operations ftrace_set_event_notrace_pid_fops = {
 	.open = ftrace_event_set_npid_open,
-	.read = seq_read,
-	.write = ftrace_event_npid_write,
+	.read_iter = seq_read_iter,
+	.write_iter = ftrace_event_npid_write_iter,
 	.llseek = seq_lseek,
 	.release = ftrace_event_release,
 };
 
 static const struct file_operations ftrace_enable_fops = {
 	.open = tracing_open_file_tr,
-	.read = event_enable_read,
-	.write = event_enable_write,
+	.read_iter = event_enable_read,
+	.write_iter = event_enable_write_iter,
 	.release = tracing_release_file_tr,
 	.llseek = default_llseek,
 };
 
 static const struct file_operations ftrace_event_format_fops = {
 	.open = trace_format_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
 #ifdef CONFIG_PERF_EVENTS
 static const struct file_operations ftrace_event_id_fops = {
-	.read = event_id_read,
+	.read_iter = event_id_read,
 	.llseek = default_llseek,
 };
 #endif
 
 static const struct file_operations ftrace_event_filter_fops = {
 	.open = tracing_open_file_tr,
-	.read = event_filter_read,
-	.write = event_filter_write,
+	.read_iter = event_filter_read,
+	.write_iter = event_filter_write_iter,
 	.release = tracing_release_file_tr,
 	.llseek = default_llseek,
 };
 
 static const struct file_operations ftrace_subsystem_filter_fops = {
 	.open = subsystem_open,
-	.read = subsystem_filter_read,
-	.write = subsystem_filter_write,
+	.read_iter = subsystem_filter_read,
+	.write_iter = subsystem_filter_write_iter,
 	.llseek = default_llseek,
 	.release = subsystem_release,
 };
 
 static const struct file_operations ftrace_system_enable_fops = {
 	.open = subsystem_open,
-	.read = system_enable_read,
-	.write = system_enable_write,
+	.read_iter = system_enable_read,
+	.write_iter = system_enable_write_iter,
 	.llseek = default_llseek,
 	.release = subsystem_release,
 };
 
 static const struct file_operations ftrace_tr_enable_fops = {
 	.open = system_tr_open,
-	.read = system_enable_read,
-	.write = system_enable_write,
+	.read_iter = system_enable_read,
+	.write_iter = system_enable_write_iter,
 	.llseek = default_llseek,
 	.release = subsystem_release,
 };
 
 static const struct file_operations ftrace_show_header_page_fops = {
 	.open = tracing_open_generic_tr,
-	.read = show_header_page_file,
+	.read_iter = show_header_page_file,
 	.llseek = default_llseek,
 	.release = tracing_release_generic_tr,
 };
 
 static const struct file_operations ftrace_show_header_event_fops = {
 	.open = tracing_open_generic_tr,
-	.read = show_header_event_file,
+	.read_iter = show_header_event_file,
 	.llseek = default_llseek,
 	.release = tracing_release_generic_tr,
 };
