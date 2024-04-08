@@ -59,10 +59,10 @@ struct carl9170_debugfs_fops {
 	enum carl9170_device_state req_dev_state;
 };
 
-static ssize_t carl9170_debugfs_read(struct file *file, char __user *userbuf,
-				     size_t count, loff_t *ppos)
+static ssize_t carl9170_debugfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct carl9170_debugfs_fops *dfops;
+	size_t count = iov_iter_count(to);
 	struct ar9170 *ar;
 	char *buf = NULL, *res_buf = NULL;
 	ssize_t ret = 0;
@@ -71,11 +71,11 @@ static ssize_t carl9170_debugfs_read(struct file *file, char __user *userbuf,
 	if (!count)
 		return 0;
 
-	ar = file->private_data;
+	ar = iocb->ki_filp->private_data;
 
 	if (!ar)
 		return -ENODEV;
-	dfops = container_of(debugfs_real_fops(file),
+	dfops = container_of(debugfs_real_fops(iocb->ki_filp),
 			     struct carl9170_debugfs_fops, fops);
 
 	if (!dfops->read)
@@ -97,8 +97,7 @@ static ssize_t carl9170_debugfs_read(struct file *file, char __user *userbuf,
 	res_buf = dfops->read(ar, buf, dfops->read_bufsize, &ret);
 
 	if (ret > 0)
-		err = simple_read_from_buffer(userbuf, count, ppos,
-					      res_buf, ret);
+		err = simple_copy_to_iter(res_buf, &iocb->ki_pos, ret, to);
 	else
 		err = ret;
 
@@ -110,10 +109,10 @@ out_free:
 	return err;
 }
 
-static ssize_t carl9170_debugfs_write(struct file *file,
-	const char __user *userbuf, size_t count, loff_t *ppos)
+static ssize_t carl9170_debugfs_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct carl9170_debugfs_fops *dfops;
+	size_t count = iov_iter_count(from);
 	struct ar9170 *ar;
 	char *buf = NULL;
 	int err = 0;
@@ -124,11 +123,11 @@ static ssize_t carl9170_debugfs_write(struct file *file,
 	if (count > PAGE_SIZE)
 		return -E2BIG;
 
-	ar = file->private_data;
+	ar = iocb->ki_filp->private_data;
 
 	if (!ar)
 		return -ENODEV;
-	dfops = container_of(debugfs_real_fops(file),
+	dfops = container_of(debugfs_real_fops(iocb->ki_filp),
 			     struct carl9170_debugfs_fops, fops);
 
 	if (!dfops->write)
@@ -138,7 +137,7 @@ static ssize_t carl9170_debugfs_write(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
-	if (copy_from_user(buf, userbuf, count)) {
+	if (!copy_from_iter_full(buf, count, from)) {
 		err = -EFAULT;
 		goto out_free;
 	}
@@ -175,8 +174,8 @@ static const struct carl9170_debugfs_fops carl_debugfs_##name ##_ops = {\
 	.req_dev_state = _dstate,					\
 	.fops = {							\
 		.open	= simple_open,					\
-		.read	= carl9170_debugfs_read,			\
-		.write	= carl9170_debugfs_write,			\
+		.read_iter	= carl9170_debugfs_read,		\
+		.write_iter	= carl9170_debugfs_write,		\
 		.owner	= THIS_MODULE					\
 	},								\
 }
