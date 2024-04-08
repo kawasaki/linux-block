@@ -892,8 +892,7 @@ static void bpf_map_show_fdinfo(struct seq_file *m, struct file *filp)
 }
 #endif
 
-static ssize_t bpf_dummy_read(struct file *filp, char __user *buf, size_t siz,
-			      loff_t *ppos)
+static ssize_t bpf_dummy_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	/* We need this handler such that alloc_file() enables
 	 * f_mode with FMODE_CAN_READ.
@@ -901,8 +900,7 @@ static ssize_t bpf_dummy_read(struct file *filp, char __user *buf, size_t siz,
 	return -EINVAL;
 }
 
-static ssize_t bpf_dummy_write(struct file *filp, const char __user *buf,
-			       size_t siz, loff_t *ppos)
+static ssize_t bpf_dummy_write(struct kiocb *iocb, struct iov_iter *to)
 {
 	/* We need this handler such that alloc_file() enables
 	 * f_mode with FMODE_CAN_WRITE.
@@ -1011,8 +1009,8 @@ const struct file_operations bpf_map_fops = {
 	.show_fdinfo	= bpf_map_show_fdinfo,
 #endif
 	.release	= bpf_map_release,
-	.read		= bpf_dummy_read,
-	.write		= bpf_dummy_write,
+	.read_iter	= bpf_dummy_read,
+	.write_iter	= bpf_dummy_write,
 	.mmap		= bpf_map_mmap,
 	.poll		= bpf_map_poll,
 	.get_unmapped_area = bpf_get_unmapped_area,
@@ -2342,8 +2340,8 @@ const struct file_operations bpf_prog_fops = {
 	.show_fdinfo	= bpf_prog_show_fdinfo,
 #endif
 	.release	= bpf_prog_release,
-	.read		= bpf_dummy_read,
-	.write		= bpf_dummy_write,
+	.read_iter	= bpf_dummy_read,
+	.write_iter	= bpf_dummy_write,
 };
 
 int bpf_prog_new_fd(struct bpf_prog *prog)
@@ -3101,8 +3099,8 @@ static const struct file_operations bpf_link_fops = {
 	.show_fdinfo	= bpf_link_show_fdinfo,
 #endif
 	.release	= bpf_link_release,
-	.read		= bpf_dummy_read,
-	.write		= bpf_dummy_write,
+	.read_iter	= bpf_dummy_read,
+	.write_iter	= bpf_dummy_write,
 };
 
 static const struct file_operations bpf_link_fops_poll = {
@@ -3110,8 +3108,8 @@ static const struct file_operations bpf_link_fops_poll = {
 	.show_fdinfo	= bpf_link_show_fdinfo,
 #endif
 	.release	= bpf_link_release,
-	.read		= bpf_dummy_read,
-	.write		= bpf_dummy_write,
+	.read_iter	= bpf_dummy_read,
+	.write_iter	= bpf_dummy_write,
 	.poll		= bpf_link_poll,
 };
 
