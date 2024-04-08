@@ -5835,6 +5835,7 @@ perf_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 
 	return ret;
 }
+FOPS_READ_ITER_HELPER(perf_read);
 
 static __poll_t perf_poll(struct file *file, poll_table *wait)
 {
@@ -6822,7 +6823,7 @@ static int perf_fasync(int fd, struct file *filp, int on)
 
 static const struct file_operations perf_fops = {
 	.release		= perf_release,
-	.read			= perf_read,
+	.read_iter		= perf_read_iter,
 	.poll			= perf_poll,
 	.unlocked_ioctl		= perf_ioctl,
 	.compat_ioctl		= perf_compat_ioctl,
