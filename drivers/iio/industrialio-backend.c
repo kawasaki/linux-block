@@ -126,11 +126,10 @@ static DEFINE_MUTEX(iio_back_lock);
 			__stringify(op));			\
 }
 
-static ssize_t iio_backend_debugfs_read_reg(struct file *file,
-					    char __user *userbuf,
-					    size_t count, loff_t *ppos)
+static ssize_t iio_backend_debugfs_read_reg(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
-	struct iio_backend *back = file->private_data;
+	struct iio_backend *back = iocb->ki_filp->private_data;
 	char read_buf[20];
 	unsigned int val;
 	int ret, len;
@@ -142,20 +141,20 @@ static ssize_t iio_backend_debugfs_read_reg(struct file *file,
 
 	len = scnprintf(read_buf, sizeof(read_buf), "0x%X\n", val);
 
-	return simple_read_from_buffer(userbuf, count, ppos, read_buf, len);
+	return simple_copy_to_iter(read_buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t iio_backend_debugfs_write_reg(struct file *file,
-					     const char __user *userbuf,
-					     size_t count, loff_t *ppos)
+static ssize_t iio_backend_debugfs_write_reg(struct kiocb *iocb,
+					     struct iov_iter *from)
 {
-	struct iio_backend *back = file->private_data;
+	struct iio_backend *back = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	unsigned int val;
 	char buf[80];
 	ssize_t rc;
 	int ret;
 
-	rc = simple_write_to_buffer(buf, sizeof(buf), ppos, userbuf, count);
+	rc = simple_copy_from_iter(buf, &iocb->ki_pos, sizeof(buf), from);
 	if (rc < 0)
 		return rc;
 
@@ -177,26 +176,25 @@ static ssize_t iio_backend_debugfs_write_reg(struct file *file,
 
 static const struct file_operations iio_backend_debugfs_reg_fops = {
 	.open = simple_open,
-	.read = iio_backend_debugfs_read_reg,
-	.write = iio_backend_debugfs_write_reg,
+	.read_iter = iio_backend_debugfs_read_reg,
+	.write_iter = iio_backend_debugfs_write_reg,
 };
 
-static ssize_t iio_backend_debugfs_read_name(struct file *file,
-					     char __user *userbuf,
-					     size_t count, loff_t *ppos)
+static ssize_t iio_backend_debugfs_read_name(struct kiocb *iocb,
+					     struct iov_iter *to)
 {
-	struct iio_backend *back = file->private_data;
+	struct iio_backend *back = iocb->ki_filp->private_data;
 	char name[128];
 	int len;
 
 	len = scnprintf(name, sizeof(name), "%s\n", back->name);
 
-	return simple_read_from_buffer(userbuf, count, ppos, name, len);
+	return simple_copy_to_iter(name, &iocb->ki_pos, len, to);
 }
 
 static const struct file_operations iio_backend_debugfs_name_fops = {
 	.open = simple_open,
-	.read = iio_backend_debugfs_read_name,
+	.read_iter = iio_backend_debugfs_read_name,
 };
 
 /**

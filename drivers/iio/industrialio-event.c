@@ -167,6 +167,7 @@ static ssize_t iio_event_chrdev_read(struct file *filep,
 
 	return copied;
 }
+FOPS_READ_ITER_HELPER(iio_event_chrdev_read);
 
 static int iio_event_chrdev_release(struct inode *inode, struct file *filep)
 {
@@ -182,7 +183,7 @@ static int iio_event_chrdev_release(struct inode *inode, struct file *filep)
 }
 
 static const struct file_operations iio_event_chrdev_fileops = {
-	.read =  iio_event_chrdev_read,
+	.read_iter =  iio_event_chrdev_read_iter,
 	.poll =  iio_event_poll,
 	.release = iio_event_chrdev_release,
 	.owner = THIS_MODULE,
