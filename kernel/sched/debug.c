@@ -120,26 +120,25 @@ static int sched_feat_set(char *cmp)
 	return 0;
 }
 
-static ssize_t
-sched_feat_write(struct file *filp, const char __user *ubuf,
-		size_t cnt, loff_t *ppos)
+static ssize_t sched_feat_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
 	char buf[64];
 	char *cmp;
 	int ret;
 	struct inode *inode;
+	size_t cnt = iov_iter_count(from);
 
 	if (cnt > 63)
 		cnt = 63;
 
-	if (copy_from_user(&buf, ubuf, cnt))
+	if (!copy_from_iter_full(&buf, cnt, from))
 		return -EFAULT;
 
 	buf[cnt] = 0;
 	cmp = strstrip(buf);
 
 	/* Ensure the static_key remains in a consistent state */
-	inode = file_inode(filp);
+	inode = file_inode(iocb->ki_filp);
 	cpus_read_lock();
 	inode_lock(inode);
 	ret = sched_feat_set(cmp);
@@ -148,7 +147,7 @@ sched_feat_write(struct file *filp, const char __user *ubuf,
 	if (ret < 0)
 		return ret;
 
-	*ppos += cnt;
+	iocb->ki_pos += cnt;
 
 	return cnt;
 }
@@ -160,24 +159,25 @@ static int sched_feat_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations sched_feat_fops = {
 	.open		= sched_feat_open,
-	.write		= sched_feat_write,
-	.read		= seq_read,
+	.write_iter	= sched_feat_write_iter,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
 
 #ifdef CONFIG_SMP
 
-static ssize_t sched_scaling_write(struct file *filp, const char __user *ubuf,
-				   size_t cnt, loff_t *ppos)
+static ssize_t sched_scaling_write_iter(struct kiocb *iocb,
+					struct iov_iter *from)
 {
+	size_t cnt = iov_iter_count(from);
 	char buf[16];
 	unsigned int scaling;
 
 	if (cnt > 15)
 		cnt = 15;
 
-	if (copy_from_user(&buf, ubuf, cnt))
+	if (!copy_from_iter_full(&buf, cnt, from))
 		return -EFAULT;
 	buf[cnt] = '\0';
 
@@ -191,7 +191,7 @@ static ssize_t sched_scaling_write(struct file *filp, const char __user *ubuf,
 	if (sched_update_scaling())
 		return -EINVAL;
 
-	*ppos += cnt;
+	iocb->ki_pos += cnt;
 	return cnt;
 }
 
@@ -208,8 +208,8 @@ static int sched_scaling_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations sched_scaling_fops = {
 	.open		= sched_scaling_open,
-	.write		= sched_scaling_write,
-	.read		= seq_read,
+	.write_iter	= sched_scaling_write_iter,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -218,16 +218,16 @@ static const struct file_operations sched_scaling_fops = {
 
 #ifdef CONFIG_PREEMPT_DYNAMIC
 
-static ssize_t sched_dynamic_write(struct file *filp, const char __user *ubuf,
-				   size_t cnt, loff_t *ppos)
+static ssize_t sched_dynamic_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	size_t cnt = iov_iter_count(from);
 	char buf[16];
 	int mode;
 
 	if (cnt > 15)
 		cnt = 15;
 
-	if (copy_from_user(&buf, ubuf, cnt))
+	if (!copy_from_iter_full(&buf, cnt, from))
 		return -EFAULT;
 
 	buf[cnt] = 0;
@@ -237,7 +237,7 @@ static ssize_t sched_dynamic_write(struct file *filp, const char __user *ubuf,
 
 	sched_dynamic_update(mode);
 
-	*ppos += cnt;
+	iocb->ki_pos += cnt;
 
 	return cnt;
 }
@@ -270,8 +270,8 @@ static int sched_dynamic_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations sched_dynamic_fops = {
 	.open		= sched_dynamic_open,
-	.write		= sched_dynamic_write,
-	.read		= seq_read,
+	.write_iter	= sched_dynamic_write,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -327,7 +327,7 @@ static int sched_debug_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations sched_debug_fops = {
 	.open		= sched_debug_open,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= seq_release,
 };
@@ -340,17 +340,18 @@ enum dl_param {
 static unsigned long fair_server_period_max = (1UL << 22) * NSEC_PER_USEC; /* ~4 seconds */
 static unsigned long fair_server_period_min = (100) * NSEC_PER_USEC;     /* 100 us */
 
-static ssize_t sched_fair_server_write(struct file *filp, const char __user *ubuf,
-				       size_t cnt, loff_t *ppos, enum dl_param param)
+static ssize_t sched_fair_server_write(struct kiocb *iocb, struct iov_iter *from,
+				       enum dl_param param)
 {
-	long cpu = (long) ((struct seq_file *) filp->private_data)->private;
+	long cpu = (long) ((struct seq_file *) iocb->ki_filp->private_data)->private;
+	size_t cnt = iov_iter_count(from);
 	struct rq *rq = cpu_rq(cpu);
 	u64 runtime, period;
 	size_t err;
 	int retval;
 	u64 value;
 
-	err = kstrtoull_from_user(ubuf, cnt, 10, &value);
+	err = kstrtoull_from_iter(from, cnt, 10, &value);
 	if (err)
 		return err;
 
@@ -394,7 +395,7 @@ static ssize_t sched_fair_server_write(struct file *filp, const char __user *ubu
 			dl_server_start(&rq->fair_server);
 	}
 
-	*ppos += cnt;
+	iocb->ki_pos += cnt;
 	return cnt;
 }
 
@@ -419,10 +420,9 @@ static size_t sched_fair_server_show(struct seq_file *m, void *v, enum dl_param 
 }
 
 static ssize_t
-sched_fair_server_runtime_write(struct file *filp, const char __user *ubuf,
-				size_t cnt, loff_t *ppos)
+sched_fair_server_runtime_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	return sched_fair_server_write(filp, ubuf, cnt, ppos, DL_RUNTIME);
+	return sched_fair_server_write(iocb, from, DL_RUNTIME);
 }
 
 static int sched_fair_server_runtime_show(struct seq_file *m, void *v)
@@ -437,17 +437,16 @@ static int sched_fair_server_runtime_open(struct inode *inode, struct file *filp
 
 static const struct file_operations fair_server_runtime_fops = {
 	.open		= sched_fair_server_runtime_open,
-	.write		= sched_fair_server_runtime_write,
+	.write_iter	= sched_fair_server_runtime_write,
 	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
 
 static ssize_t
-sched_fair_server_period_write(struct file *filp, const char __user *ubuf,
-			       size_t cnt, loff_t *ppos)
+sched_fair_server_period_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	return sched_fair_server_write(filp, ubuf, cnt, ppos, DL_PERIOD);
+	return sched_fair_server_write(iocb, from, DL_PERIOD);
 }
 
 static int sched_fair_server_period_show(struct seq_file *m, void *v)
@@ -462,7 +461,7 @@ static int sched_fair_server_period_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations fair_server_period_fops = {
 	.open		= sched_fair_server_period_open,
-	.write		= sched_fair_server_period_write,
+	.write_iter	= sched_fair_server_period_write,
 	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -561,7 +560,7 @@ static int sd_flags_open(struct inode *inode, struct file *file)
 
 static const struct file_operations sd_flags_fops = {
 	.open		= sd_flags_open,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
