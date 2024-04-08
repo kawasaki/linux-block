@@ -16,10 +16,9 @@
 
 #include "common.h"
 
-static ssize_t read_file_modal_eeprom(struct file *file, char __user *user_buf,
-				      size_t count, loff_t *ppos)
+static ssize_t read_file_modal_eeprom(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ath_hw *ah = file->private_data;
+	struct ath_hw *ah = iocb->ki_filp->private_data;
 	u32 len = 0, size = 6000;
 	char *buf;
 	size_t retval;
@@ -30,14 +29,14 @@ static ssize_t read_file_modal_eeprom(struct file *file, char __user *user_buf,
 
 	len = ah->eep_ops->dump_eeprom(ah, false, buf, len, size);
 
-	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	retval = simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 	kfree(buf);
 
 	return retval;
 }
 
 static const struct file_operations fops_modal_eeprom = {
-	.read = read_file_modal_eeprom,
+	.read_iter = read_file_modal_eeprom,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -52,10 +51,9 @@ void ath9k_cmn_debug_modal_eeprom(struct dentry *debugfs_phy,
 }
 EXPORT_SYMBOL(ath9k_cmn_debug_modal_eeprom);
 
-static ssize_t read_file_base_eeprom(struct file *file, char __user *user_buf,
-				     size_t count, loff_t *ppos)
+static ssize_t read_file_base_eeprom(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ath_hw *ah = file->private_data;
+	struct ath_hw *ah = iocb->ki_filp->private_data;
 	u32 len = 0, size = 1500;
 	ssize_t retval = 0;
 	char *buf;
@@ -66,14 +64,14 @@ static ssize_t read_file_base_eeprom(struct file *file, char __user *user_buf,
 
 	len = ah->eep_ops->dump_eeprom(ah, true, buf, len, size);
 
-	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	retval = simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 	kfree(buf);
 
 	return retval;
 }
 
 static const struct file_operations fops_base_eeprom = {
-	.read = read_file_base_eeprom,
+	.read_iter = read_file_base_eeprom,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -120,8 +118,7 @@ void ath9k_cmn_debug_stat_rx(struct ath_rx_stats *rxstats,
 }
 EXPORT_SYMBOL(ath9k_cmn_debug_stat_rx);
 
-static ssize_t read_file_recv(struct file *file, char __user *user_buf,
-			      size_t count, loff_t *ppos)
+static ssize_t read_file_recv(struct kiocb *iocb, struct iov_iter *to)
 {
 #define RXS_ERR(s, e)					\
 	do {						\
@@ -130,7 +127,7 @@ static ssize_t read_file_recv(struct file *file, char __user *user_buf,
 				 rxstats->e);		\
 	} while (0)
 
-	struct ath_rx_stats *rxstats = file->private_data;
+	struct ath_rx_stats *rxstats = iocb->ki_filp->private_data;
 	char *buf;
 	unsigned int len = 0, size = 1600;
 	ssize_t retval = 0;
@@ -162,7 +159,7 @@ static ssize_t read_file_recv(struct file *file, char __user *user_buf,
 	if (len > size)
 		len = size;
 
-	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	retval = simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 	kfree(buf);
 
 	return retval;
@@ -171,7 +168,7 @@ static ssize_t read_file_recv(struct file *file, char __user *user_buf,
 }
 
 static const struct file_operations fops_recv = {
-	.read = read_file_recv,
+	.read_iter = read_file_recv,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -184,14 +181,13 @@ void ath9k_cmn_debug_recv(struct dentry *debugfs_phy,
 }
 EXPORT_SYMBOL(ath9k_cmn_debug_recv);
 
-static ssize_t read_file_phy_err(struct file *file, char __user *user_buf,
-				 size_t count, loff_t *ppos)
+static ssize_t read_file_phy_err(struct kiocb *iocb, struct iov_iter *to)
 {
 #define PHY_ERR(s, p) \
 	len += scnprintf(buf + len, size - len, "%22s : %10u\n", s, \
 			 rxstats->phy_err_stats[p])
 
-	struct ath_rx_stats *rxstats = file->private_data;
+	struct ath_rx_stats *rxstats = iocb->ki_filp->private_data;
 	char *buf;
 	unsigned int len = 0, size = 1600;
 	ssize_t retval = 0;
@@ -238,7 +234,7 @@ static ssize_t read_file_phy_err(struct file *file, char __user *user_buf,
 	if (len > size)
 		len = size;
 
-	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	retval = simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 	kfree(buf);
 
 	return retval;
@@ -247,7 +243,7 @@ static ssize_t read_file_phy_err(struct file *file, char __user *user_buf,
 }
 
 static const struct file_operations fops_phy_err = {
-	.read = read_file_phy_err,
+	.read_iter = read_file_phy_err,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
