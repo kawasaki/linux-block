@@ -1057,19 +1057,19 @@ static int sdebug_error_open(struct inode *inode, struct file *file)
 	return single_open(file, sdebug_error_show, inode->i_private);
 }
 
-static ssize_t sdebug_error_write(struct file *file, const char __user *ubuf,
-		size_t count, loff_t *ppos)
+static ssize_t sdebug_error_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	char *buf;
 	unsigned int inject_type;
 	struct sdebug_err_inject *inject;
-	struct scsi_device *sdev = (struct scsi_device *)file->f_inode->i_private;
+	struct scsi_device *sdev = iocb->ki_filp->f_inode->i_private;
+	size_t count = iov_iter_count(from);
 
 	buf = kzalloc(count + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	if (copy_from_user(buf, ubuf, count)) {
+	if (!copy_from_iter_full(buf, count, from)) {
 		kfree(buf);
 		return -EFAULT;
 	}
@@ -1130,8 +1130,8 @@ out_error:
 
 static const struct file_operations sdebug_error_fops = {
 	.open	= sdebug_error_open,
-	.read	= seq_read,
-	.write	= sdebug_error_write,
+	.read_iter	= seq_read_iter,
+	.write_iter	= sdebug_error_write,
 	.release = single_release,
 };
 
@@ -1152,17 +1152,17 @@ static int sdebug_target_reset_fail_open(struct inode *inode, struct file *file)
 	return single_open(file, sdebug_target_reset_fail_show, inode->i_private);
 }
 
-static ssize_t sdebug_target_reset_fail_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
+static ssize_t sdebug_target_reset_fail_write(struct kiocb *iocb,
+					      struct iov_iter *from)
 {
 	int ret;
-	struct scsi_target *starget =
-		(struct scsi_target *)file->f_inode->i_private;
+	struct scsi_target *starget = iocb->ki_filp->f_inode->i_private;
 	struct sdebug_target_info *targetip =
 		(struct sdebug_target_info *)starget->hostdata;
+	size_t count = iov_iter_count(from);
 
 	if (targetip) {
-		ret = kstrtobool_from_user(ubuf, count, &targetip->reset_fail);
+		ret = kstrtobool_from_iter(from, count, &targetip->reset_fail);
 		return ret < 0 ? ret : count;
 	}
 	return -ENODEV;
@@ -1170,8 +1170,8 @@ static ssize_t sdebug_target_reset_fail_write(struct file *file,
 
 static const struct file_operations sdebug_target_reset_fail_fops = {
 	.open	= sdebug_target_reset_fail_open,
-	.read	= seq_read,
-	.write	= sdebug_target_reset_fail_write,
+	.read_iter	= seq_read_iter,
+	.write_iter	= sdebug_target_reset_fail_write,
 	.release = single_release,
 };
 
