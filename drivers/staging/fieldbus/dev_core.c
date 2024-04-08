@@ -194,6 +194,7 @@ static ssize_t fieldbus_read(struct file *filp, char __user *buf, size_t size,
 	of->dc_event = fbdev->dc_event;
 	return fbdev->read_area(fbdev, buf, size, offset);
 }
+FOPS_READ_ITER_HELPER(fieldbus_read);
 
 static ssize_t fieldbus_write(struct file *filp, const char __user *buf,
 			      size_t size, loff_t *offset)
@@ -203,6 +204,7 @@ static ssize_t fieldbus_write(struct file *filp, const char __user *buf,
 
 	return fbdev->write_area(fbdev, buf, size, offset);
 }
+FOPS_WRITE_ITER_HELPER(fieldbus_write);
 
 static __poll_t fieldbus_poll(struct file *filp, poll_table *wait)
 {
@@ -220,8 +222,8 @@ static __poll_t fieldbus_poll(struct file *filp, poll_table *wait)
 static const struct file_operations fieldbus_fops = {
 	.open		= fieldbus_open,
 	.release	= fieldbus_release,
-	.read		= fieldbus_read,
-	.write		= fieldbus_write,
+	.read_iter	= fieldbus_read_iter,
+	.write_iter	= fieldbus_write_iter,
 	.poll		= fieldbus_poll,
 	.llseek		= generic_file_llseek,
 	.owner		= THIS_MODULE,
