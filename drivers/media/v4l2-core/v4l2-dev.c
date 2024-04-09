@@ -318,6 +318,7 @@ static ssize_t v4l2_read(struct file *filp, char __user *buf,
 			video_device_node_name(vdev), sz, ret);
 	return ret;
 }
+FOPS_READ_ITER_HELPER(v4l2_read);
 
 static ssize_t v4l2_write(struct file *filp, const char __user *buf,
 		size_t sz, loff_t *off)
@@ -335,6 +336,7 @@ static ssize_t v4l2_write(struct file *filp, const char __user *buf,
 			video_device_node_name(vdev), sz, ret);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(v4l2_write);
 
 static __poll_t v4l2_poll(struct file *filp, struct poll_table_struct *poll)
 {
@@ -472,8 +474,8 @@ static int v4l2_release(struct inode *inode, struct file *filp)
 
 static const struct file_operations v4l2_fops = {
 	.owner = THIS_MODULE,
-	.read = v4l2_read,
-	.write = v4l2_write,
+	.read_iter = v4l2_read_iter,
+	.write_iter = v4l2_write_iter,
 	.open = v4l2_open,
 	.get_unmapped_area = v4l2_get_unmapped_area,
 	.mmap = v4l2_mmap,
