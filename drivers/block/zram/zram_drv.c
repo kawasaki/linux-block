@@ -836,13 +836,13 @@ static void zram_debugfs_destroy(void)
 	debugfs_remove_recursive(zram_debugfs_root);
 }
 
-static ssize_t read_block_state(struct file *file, char __user *buf,
-				size_t count, loff_t *ppos)
+static ssize_t read_block_state(struct kiocb *iocb, struct iov_iter *to)
 {
 	char *kbuf;
 	ssize_t index, written = 0;
-	struct zram *zram = file->private_data;
+	struct zram *zram = iocb->ki_filp->private_data;
 	unsigned long nr_pages = zram->disksize >> PAGE_SHIFT;
+	size_t count = iov_iter_count(to);
 	struct timespec64 ts;
 
 	kbuf = kvmalloc(count, GFP_KERNEL);
@@ -856,7 +856,7 @@ static ssize_t read_block_state(struct file *file, char __user *buf,
 		return -EINVAL;
 	}
 
-	for (index = *ppos; index < nr_pages; index++) {
+	for (index = iocb->ki_pos; index < nr_pages; index++) {
 		int copied;
 
 		zram_slot_lock(zram, index);
@@ -884,11 +884,11 @@ static ssize_t read_block_state(struct file *file, char __user *buf,
 		count -= copied;
 next:
 		zram_slot_unlock(zram, index);
-		*ppos += 1;
+		iocb->ki_pos++;
 	}
 
 	up_read(&zram->init_lock);
-	if (copy_to_user(buf, kbuf, written))
+	if (!copy_to_iter(kbuf, written, to))
 		written = -EFAULT;
 	kvfree(kbuf);
 
@@ -897,7 +897,7 @@ next:
 
 static const struct file_operations proc_zram_block_state_op = {
 	.open = simple_open,
-	.read = read_block_state,
+	.read_iter = read_block_state,
 	.llseek = default_llseek,
 };
 
