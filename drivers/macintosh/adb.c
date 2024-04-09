@@ -713,11 +713,11 @@ static int adb_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t adb_read(struct file *file, char __user *buf,
-			size_t count, loff_t *ppos)
+static ssize_t adb_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	int ret = 0;
-	struct adbdev_state *state = file->private_data;
+	struct adbdev_state *state = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct adb_request *req;
 	DECLARE_WAITQUEUE(wait, current);
 	unsigned long flags;
@@ -741,7 +741,7 @@ static ssize_t adb_read(struct file *file, char __user *buf,
 		if (req != NULL || ret != 0)
 			break;
 		
-		if (file->f_flags & O_NONBLOCK) {
+		if (iocb->ki_filp->f_flags & O_NONBLOCK) {
 			ret = -EAGAIN;
 			break;
 		}
@@ -764,18 +764,18 @@ static ssize_t adb_read(struct file *file, char __user *buf,
 	ret = req->reply_len;
 	if (ret > count)
 		ret = count;
-	if (ret > 0 && copy_to_user(buf, req->reply, ret))
+	if (ret > 0 && !copy_to_iter_full(req->reply, ret, to))
 		ret = -EFAULT;
 
 	kfree(req);
 	return ret;
 }
 
-static ssize_t adb_write(struct file *file, const char __user *buf,
-			 size_t count, loff_t *ppos)
+static ssize_t adb_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	int ret/*, i*/;
-	struct adbdev_state *state = file->private_data;
+	struct adbdev_state *state = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct adb_request *req;
 
 	if (count < 2 || count > sizeof(req->data))
@@ -794,7 +794,7 @@ static ssize_t adb_write(struct file *file, const char __user *buf,
 	req->complete = 0;
 	
 	ret = -EFAULT;
-	if (copy_from_user(req->data, buf, count))
+	if (!copy_from_iter_full(req->data, count, from))
 		goto out;
 
 	atomic_inc(&state->n_pending);
@@ -842,8 +842,8 @@ out:
 
 static const struct file_operations adb_fops = {
 	.owner		= THIS_MODULE,
-	.read		= adb_read,
-	.write		= adb_write,
+	.read_iter	= adb_read,
+	.write_iter	= adb_write,
 	.open		= adb_open,
 	.release	= adb_release,
 };
