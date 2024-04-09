@@ -86,25 +86,25 @@ static int fault_opcodes_open(struct inode *inode, struct file *file)
 	return nonseekable_open(inode, file);
 }
 
-static ssize_t fault_opcodes_write(struct file *file, const char __user *buf,
-				   size_t len, loff_t *pos)
+static ssize_t fault_opcodes_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	ssize_t ret = 0;
 	/* 1280 = 256 opcodes * 4 chars/opcode + 255 commas + NULL */
 	size_t copy, datalen = 1280;
 	char *data, *token, *ptr, *end;
-	struct fault *fault = file->private_data;
+	struct fault *fault = iocb->ki_filp->private_data;
+	size_t len = iov_iter_count(from);
 
 	data = kcalloc(datalen, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 	copy = min(len, datalen - 1);
-	if (copy_from_user(data, buf, copy)) {
+	if (!copy_from_iter_full(data, copy, from)) {
 		ret = -EFAULT;
 		goto free_data;
 	}
 
-	ret = debugfs_file_get(file->f_path.dentry);
+	ret = debugfs_file_get(iocb->ki_filp->f_path.dentry);
 	if (unlikely(ret))
 		goto free_data;
 	ptr = data;
@@ -154,26 +154,25 @@ static ssize_t fault_opcodes_write(struct file *file, const char __user *buf,
 	}
 	ret = len;
 
-	debugfs_file_put(file->f_path.dentry);
+	debugfs_file_put(iocb->ki_filp->f_path.dentry);
 free_data:
 	kfree(data);
 	return ret;
 }
 
-static ssize_t fault_opcodes_read(struct file *file, char __user *buf,
-				  size_t len, loff_t *pos)
+static ssize_t fault_opcodes_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	ssize_t ret = 0;
 	char *data;
 	size_t datalen = 1280, size = 0; /* see fault_opcodes_write() */
 	unsigned long bit = 0, zero = 0;
-	struct fault *fault = file->private_data;
+	struct fault *fault = iocb->ki_filp->private_data;
 	size_t bitsize = sizeof(fault->opcodes) * BITS_PER_BYTE;
 
 	data = kcalloc(datalen, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
-	ret = debugfs_file_get(file->f_path.dentry);
+	ret = debugfs_file_get(iocb->ki_filp->f_path.dentry);
 	if (unlikely(ret))
 		goto free_data;
 	bit = find_first_bit(fault->opcodes, bitsize);
@@ -189,10 +188,10 @@ static ssize_t fault_opcodes_read(struct file *file, char __user *buf,
 					 bit);
 		bit = find_next_bit(fault->opcodes, bitsize, zero);
 	}
-	debugfs_file_put(file->f_path.dentry);
+	debugfs_file_put(iocb->ki_filp->f_path.dentry);
 	data[size - 1] = '\n';
 	data[size] = '\0';
-	ret = simple_read_from_buffer(buf, len, pos, data, size);
+	ret = simple_copy_to_iter(data, &iocb->ki_pos, size, to);
 free_data:
 	kfree(data);
 	return ret;
@@ -201,8 +200,8 @@ free_data:
 static const struct file_operations __fault_opcodes_fops = {
 	.owner = THIS_MODULE,
 	.open = fault_opcodes_open,
-	.read = fault_opcodes_read,
-	.write = fault_opcodes_write,
+	.read_iter = fault_opcodes_read,
+	.write_iter = fault_opcodes_write,
 };
 
 void hfi1_fault_exit_debugfs(struct hfi1_ibdev *ibd)
