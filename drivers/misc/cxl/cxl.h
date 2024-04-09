@@ -1045,7 +1045,7 @@ int afu_release(struct inode *inode, struct file *file);
 long afu_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 int afu_mmap(struct file *file, struct vm_area_struct *vm);
 __poll_t afu_poll(struct file *file, struct poll_table_struct *poll);
-ssize_t afu_read(struct file *file, char __user *buf, size_t count, loff_t *off);
+ssize_t afu_read(struct kiocb *iocb, struct iov_iter *to);
 extern const struct file_operations afu_fops;
 
 struct cxl *cxl_guest_init_adapter(struct device_node *np, struct platform_device *dev);

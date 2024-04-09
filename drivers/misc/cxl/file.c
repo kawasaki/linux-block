@@ -385,7 +385,7 @@ __poll_t afu_poll(struct file *file, struct poll_table_struct *poll)
 }
 
 static ssize_t afu_driver_event_copy(struct cxl_context *ctx,
-				     char __user *buf,
+				     struct iov_iter *to,
 				     struct cxl_event *event,
 				     struct cxl_event_afu_driver_reserved *pl)
 {
@@ -403,14 +403,13 @@ static ssize_t afu_driver_event_copy(struct cxl_context *ctx,
 	}
 
 	/* Copy event header */
-	if (copy_to_user(buf, event, sizeof(struct cxl_event_header))) {
+	if (!copy_to_iter_full(event, sizeof(struct cxl_event_header), to)) {
 		ctx->afu_driver_ops->event_delivered(ctx, pl, -EFAULT);
 		return -EFAULT;
 	}
 
 	/* Copy event data */
-	buf += sizeof(struct cxl_event_header);
-	if (copy_to_user(buf, &pl->data, pl->data_size)) {
+	if (!copy_to_iter_full(&pl->data, pl->data_size, to)) {
 		ctx->afu_driver_ops->event_delivered(ctx, pl, -EFAULT);
 		return -EFAULT;
 	}
@@ -419,11 +418,11 @@ static ssize_t afu_driver_event_copy(struct cxl_context *ctx,
 	return event->header.size;
 }
 
-ssize_t afu_read(struct file *file, char __user *buf, size_t count,
-			loff_t *off)
+ssize_t afu_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct cxl_context *ctx = file->private_data;
+	struct cxl_context *ctx = iocb->ki_filp->private_data;
 	struct cxl_event_afu_driver_reserved *pl = NULL;
+	size_t count = iov_iter_count(to);
 	struct cxl_event event;
 	unsigned long flags;
 	int rc;
@@ -447,7 +446,7 @@ ssize_t afu_read(struct file *file, char __user *buf, size_t count,
 			goto out;
 		}
 
-		if (file->f_flags & O_NONBLOCK) {
+		if (iocb->ki_filp->f_flags & O_NONBLOCK) {
 			rc = -EAGAIN;
 			goto out;
 		}
@@ -505,9 +504,9 @@ ssize_t afu_read(struct file *file, char __user *buf, size_t count,
 	spin_unlock_irqrestore(&ctx->lock, flags);
 
 	if (event.header.type == CXL_EVENT_AFU_DRIVER)
-		return afu_driver_event_copy(ctx, buf, &event, pl);
+		return afu_driver_event_copy(ctx, to, &event, pl);
 
-	if (copy_to_user(buf, &event, event.header.size))
+	if (!copy_to_iter_full(&event, event.header.size, to))
 		return -EFAULT;
 	return event.header.size;
 
@@ -525,7 +524,7 @@ const struct file_operations afu_fops = {
 	.owner		= THIS_MODULE,
 	.open           = afu_open,
 	.poll		= afu_poll,
-	.read		= afu_read,
+	.read_iter	= afu_read,
 	.release        = afu_release,
 	.unlocked_ioctl = afu_ioctl,
 	.compat_ioctl   = afu_compat_ioctl,
@@ -536,7 +535,7 @@ static const struct file_operations afu_master_fops = {
 	.owner		= THIS_MODULE,
 	.open           = afu_master_open,
 	.poll		= afu_poll,
-	.read		= afu_read,
+	.read_iter	= afu_read,
 	.release        = afu_release,
 	.unlocked_ioctl = afu_ioctl,
 	.compat_ioctl   = afu_compat_ioctl,

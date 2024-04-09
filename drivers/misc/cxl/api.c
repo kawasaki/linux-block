@@ -375,10 +375,9 @@ __poll_t cxl_fd_poll(struct file *file, struct poll_table_struct *poll)
 	return afu_poll(file, poll);
 }
 EXPORT_SYMBOL_GPL(cxl_fd_poll);
-ssize_t cxl_fd_read(struct file *file, char __user *buf, size_t count,
-			loff_t *off)
+ssize_t cxl_fd_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	return afu_read(file, buf, count, off);
+	return afu_read(iocb, to);
 }
 EXPORT_SYMBOL_GPL(cxl_fd_read);
 
@@ -410,7 +409,7 @@ struct file *cxl_get_fd(struct cxl_context *ctx, struct file_operations *fops,
 	if (fops) {
 		PATCH_FOPS(open);
 		PATCH_FOPS(poll);
-		PATCH_FOPS(read);
+		PATCH_FOPS(read_iter);
 		PATCH_FOPS(release);
 		PATCH_FOPS(unlocked_ioctl);
 		PATCH_FOPS(compat_ioctl);

@@ -196,8 +196,7 @@ int cxl_fd_release(struct inode *inode, struct file *file);
 long cxl_fd_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 int cxl_fd_mmap(struct file *file, struct vm_area_struct *vm);
 __poll_t cxl_fd_poll(struct file *file, struct poll_table_struct *poll);
-ssize_t cxl_fd_read(struct file *file, char __user *buf, size_t count,
-			   loff_t *off);
+ssize_t cxl_fd_read(struct kiocb *iocb, struct iov_iter *to);
 
 /*
  * For EEH, a driver may want to assert a PERST will reload the same image
