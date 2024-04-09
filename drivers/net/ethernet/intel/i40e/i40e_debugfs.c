@@ -44,23 +44,21 @@ static char i40e_dbg_command_buf[256] = "";
 
 /**
  * i40e_dbg_command_read - read for command datum
- * @filp: the opened file
- * @buffer: where to write the data for the user to read
- * @count: the size of the user's buffer
- * @ppos: file position offset
+ * @iocb: the kernel io callback (kiocb) struct
+ * @to: iovec iterator
  **/
-static ssize_t i40e_dbg_command_read(struct file *filp, char __user *buffer,
-				     size_t count, loff_t *ppos)
+static ssize_t i40e_dbg_command_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct i40e_pf *pf = filp->private_data;
+	struct i40e_pf *pf = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct i40e_vsi *main_vsi;
-	int bytes_not_copied;
 	int buf_size = 256;
 	char *buf;
+	bool ret;
 	int len;
 
 	/* don't allow partial reads */
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 	if (count < buf_size)
 		return -ENOSPC;
@@ -73,13 +71,13 @@ static ssize_t i40e_dbg_command_read(struct file *filp, char __user *buffer,
 	len = snprintf(buf, buf_size, "%s: %s\n", main_vsi->netdev->name,
 		       i40e_dbg_command_buf);
 
-	bytes_not_copied = copy_to_user(buffer, buf, len);
+	ret = !copy_to_iter_full(buf, len, to);
 	kfree(buf);
 
-	if (bytes_not_copied)
+	if (ret)
 		return -EFAULT;
 
-	*ppos = len;
+	iocb->ki_pos = len;
 	return len;
 }
 
@@ -744,33 +742,28 @@ static void i40e_dbg_dump_vf_all(struct i40e_pf *pf)
 
 /**
  * i40e_dbg_command_write - write into command datum
- * @filp: the opened file
- * @buffer: where to find the user's data
- * @count: the length of the user's data
- * @ppos: file position offset
+ * @iocb: the kernel io callback (kiocb) struct
+ * @from: iovec iterator
  **/
-static ssize_t i40e_dbg_command_write(struct file *filp,
-				      const char __user *buffer,
-				      size_t count, loff_t *ppos)
+static ssize_t i40e_dbg_command_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct i40e_pf *pf = filp->private_data;
+	struct i40e_pf *pf = iocb->ki_filp->private_data;
 	char *cmd_buf, *cmd_buf_tmp;
-	int bytes_not_copied;
 	struct i40e_vsi *vsi;
 	int vsi_seid;
 	int veb_seid;
 	int vf_id;
 	int cnt;
+	size_t count = iov_iter_count(from);
 
 	/* don't allow partial writes */
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	cmd_buf = kzalloc(count + 1, GFP_KERNEL);
 	if (!cmd_buf)
 		return count;
-	bytes_not_copied = copy_from_user(cmd_buf, buffer, count);
-	if (bytes_not_copied) {
+	if (!copy_from_iter_full(cmd_buf, count, from)) {
 		kfree(cmd_buf);
 		return -EFAULT;
 	}
@@ -1620,8 +1613,8 @@ command_write_done:
 static const struct file_operations i40e_dbg_command_fops = {
 	.owner = THIS_MODULE,
 	.open =  simple_open,
-	.read =  i40e_dbg_command_read,
-	.write = i40e_dbg_command_write,
+	.read_iter =  i40e_dbg_command_read,
+	.write_iter = i40e_dbg_command_write,
 };
 
 /**************************************************************
@@ -1633,23 +1626,21 @@ static char i40e_dbg_netdev_ops_buf[256] = "";
 
 /**
  * i40e_dbg_netdev_ops_read - read for netdev_ops datum
- * @filp: the opened file
- * @buffer: where to write the data for the user to read
- * @count: the size of the user's buffer
- * @ppos: file position offset
+ * @iocb: the kernel io callback (kiocb) struct
+ * @to: iovec iterator
  **/
-static ssize_t i40e_dbg_netdev_ops_read(struct file *filp, char __user *buffer,
-					size_t count, loff_t *ppos)
+static ssize_t i40e_dbg_netdev_ops_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct i40e_pf *pf = filp->private_data;
+	struct i40e_pf *pf = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct i40e_vsi *main_vsi;
-	int bytes_not_copied;
 	int buf_size = 256;
 	char *buf;
+	bool ret;
 	int len;
 
 	/* don't allow partal reads */
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 	if (count < buf_size)
 		return -ENOSPC;
@@ -1662,44 +1653,39 @@ static ssize_t i40e_dbg_netdev_ops_read(struct file *filp, char __user *buffer,
 	len = snprintf(buf, buf_size, "%s: %s\n", main_vsi->netdev->name,
 		       i40e_dbg_netdev_ops_buf);
 
-	bytes_not_copied = copy_to_user(buffer, buf, len);
+	ret = !copy_to_iter_full(buf, len, to);
 	kfree(buf);
 
-	if (bytes_not_copied)
+	if (ret)
 		return -EFAULT;
 
-	*ppos = len;
+	iocb->ki_pos = len;
 	return len;
 }
 
 /**
  * i40e_dbg_netdev_ops_write - write into netdev_ops datum
- * @filp: the opened file
- * @buffer: where to find the user's data
- * @count: the length of the user's data
- * @ppos: file position offset
+ * @iocb: the kernel io callback (kiocb) struct
+ * @from: iovec iterator
  **/
-static ssize_t i40e_dbg_netdev_ops_write(struct file *filp,
-					 const char __user *buffer,
-					 size_t count, loff_t *ppos)
+static ssize_t i40e_dbg_netdev_ops_write(struct kiocb *iocb,
+					 struct iov_iter *from)
 {
-	struct i40e_pf *pf = filp->private_data;
-	int bytes_not_copied;
+	struct i40e_pf *pf = iocb->ki_filp->private_data;
 	struct i40e_vsi *vsi;
 	char *buf_tmp;
 	int vsi_seid;
 	int i, cnt;
+	size_t count = iov_iter_count(from);
 
 	/* don't allow partial writes */
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 	if (count >= sizeof(i40e_dbg_netdev_ops_buf))
 		return -ENOSPC;
 
 	memset(i40e_dbg_netdev_ops_buf, 0, sizeof(i40e_dbg_netdev_ops_buf));
-	bytes_not_copied = copy_from_user(i40e_dbg_netdev_ops_buf,
-					  buffer, count);
-	if (bytes_not_copied)
+	if (!copy_from_iter_full(i40e_dbg_netdev_ops_buf, count, from))
 		return -EFAULT;
 	i40e_dbg_netdev_ops_buf[count] = '\0';
 
@@ -1788,8 +1774,8 @@ netdev_ops_write_done:
 static const struct file_operations i40e_dbg_netdev_ops_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.read = i40e_dbg_netdev_ops_read,
-	.write = i40e_dbg_netdev_ops_write,
+	.read_iter = i40e_dbg_netdev_ops_read,
+	.write_iter = i40e_dbg_netdev_ops_write,
 };
 
 /**

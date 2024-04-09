@@ -151,27 +151,25 @@ static int ice_debugfs_module_open(struct inode *inode, struct file *filp)
 }
 
 /**
- * ice_debugfs_module_write - write into 'module' file
- * @filp: the opened file
- * @buf: where to find the user's data
- * @count: the length of the user's data
- * @ppos: file position offset
+ * ice_debugfs_module_write_iter - write into 'module' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @from: iovec iterator
  */
 static ssize_t
-ice_debugfs_module_write(struct file *filp, const char __user *buf,
-			 size_t count, loff_t *ppos)
+ice_debugfs_module_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ice_pf *pf = file_inode(filp)->i_private;
-	struct dentry *dentry = file_dentry(filp);
+	struct ice_pf *pf = file_inode(iocb->ki_filp)->i_private;
+	struct dentry *dentry = file_dentry(iocb->ki_filp);
 	struct device *dev = ice_pf_to_dev(pf);
 	char user_val[16], *cmd_buf;
 	int module, log_level, cnt;
+	size_t count = iov_iter_count(from);
 
 	/* don't allow partial writes or invalid input */
-	if (*ppos != 0 || count > 8)
+	if (iocb->ki_pos != 0 || count > 8)
 		return -EINVAL;
 
-	cmd_buf = memdup_user_nul(buf, count);
+	cmd_buf = iterdup_nul(from, count);
 	if (IS_ERR(cmd_buf))
 		return PTR_ERR(cmd_buf);
 
@@ -209,55 +207,50 @@ ice_debugfs_module_write(struct file *filp, const char __user *buf,
 static const struct file_operations ice_debugfs_module_fops = {
 	.owner = THIS_MODULE,
 	.open  = ice_debugfs_module_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.release = single_release,
-	.write = ice_debugfs_module_write,
+	.write_iter = ice_debugfs_module_write_iter,
 };
 
 /**
- * ice_debugfs_nr_messages_read - read from 'nr_messages' file
- * @filp: the opened file
- * @buffer: where to write the data for the user to read
- * @count: the size of the user's buffer
- * @ppos: file position offset
+ * ice_debugfs_nr_messages_read_iter - read from 'nr_messages' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @to: iovec iterator
  */
-static ssize_t ice_debugfs_nr_messages_read(struct file *filp,
-					    char __user *buffer, size_t count,
-					    loff_t *ppos)
+static ssize_t ice_debugfs_nr_messages_read_iter(struct kiocb *iocb,
+						 struct iov_iter *to)
 {
-	struct ice_pf *pf = filp->private_data;
+	struct ice_pf *pf = iocb->ki_filp->private_data;
 	struct ice_hw *hw = &pf->hw;
 	char buff[32] = {};
 
 	snprintf(buff, sizeof(buff), "%d\n",
 		 hw->fwlog_cfg.log_resolution);
 
-	return simple_read_from_buffer(buffer, count, ppos, buff, strlen(buff));
+	return simple_copy_to_iter(buff, &iocb->ki_pos, strlen(buff), to);
 }
 
 /**
- * ice_debugfs_nr_messages_write - write into 'nr_messages' file
- * @filp: the opened file
- * @buf: where to find the user's data
- * @count: the length of the user's data
- * @ppos: file position offset
+ * ice_debugfs_nr_messages_write_iter - write into 'nr_messages' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @from: iovec iterator
  */
 static ssize_t
-ice_debugfs_nr_messages_write(struct file *filp, const char __user *buf,
-			      size_t count, loff_t *ppos)
+ice_debugfs_nr_messages_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ice_pf *pf = filp->private_data;
+	struct ice_pf *pf = iocb->ki_filp->private_data;
 	struct device *dev = ice_pf_to_dev(pf);
 	struct ice_hw *hw = &pf->hw;
 	char user_val[8], *cmd_buf;
 	s16 nr_messages;
 	ssize_t ret;
+	size_t count = iov_iter_count(from);
 
 	/* don't allow partial writes or invalid input */
-	if (*ppos != 0 || count > 4)
+	if (iocb->ki_pos != 0 || count > 4)
 		return -EINVAL;
 
-	cmd_buf = memdup_user_nul(buf, count);
+	cmd_buf = iterdup_nul(from, count);
 	if (IS_ERR(cmd_buf))
 		return PTR_ERR(cmd_buf);
 
@@ -285,22 +278,19 @@ ice_debugfs_nr_messages_write(struct file *filp, const char __user *buf,
 static const struct file_operations ice_debugfs_nr_messages_fops = {
 	.owner = THIS_MODULE,
 	.open  = simple_open,
-	.read = ice_debugfs_nr_messages_read,
-	.write = ice_debugfs_nr_messages_write,
+	.read_iter = ice_debugfs_nr_messages_read_iter,
+	.write_iter = ice_debugfs_nr_messages_write_iter,
 };
 
 /**
- * ice_debugfs_enable_read - read from 'enable' file
- * @filp: the opened file
- * @buffer: where to write the data for the user to read
- * @count: the size of the user's buffer
- * @ppos: file position offset
+ * ice_debugfs_enable_read_iter - read from 'enable' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @to: iovec iterator
  */
-static ssize_t ice_debugfs_enable_read(struct file *filp,
-				       char __user *buffer, size_t count,
-				       loff_t *ppos)
+static ssize_t ice_debugfs_enable_read_iter(struct kiocb *iocb,
+					    struct iov_iter *to)
 {
-	struct ice_pf *pf = filp->private_data;
+	struct ice_pf *pf = iocb->ki_filp->private_data;
 	struct ice_hw *hw = &pf->hw;
 	char buff[32] = {};
 
@@ -308,31 +298,29 @@ static ssize_t ice_debugfs_enable_read(struct file *filp,
 		 (u16)(hw->fwlog_cfg.options &
 		 ICE_FWLOG_OPTION_IS_REGISTERED) >> 3);
 
-	return simple_read_from_buffer(buffer, count, ppos, buff, strlen(buff));
+	return simple_copy_to_iter(buff, &iocb->ki_pos, strlen(buff), to);
 }
 
 /**
- * ice_debugfs_enable_write - write into 'enable' file
- * @filp: the opened file
- * @buf: where to find the user's data
- * @count: the length of the user's data
- * @ppos: file position offset
+ * ice_debugfs_enable_write_iter - write into 'enable' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @from: iovec iterator
  */
 static ssize_t
-ice_debugfs_enable_write(struct file *filp, const char __user *buf,
-			 size_t count, loff_t *ppos)
+ice_debugfs_enable_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ice_pf *pf = filp->private_data;
+	struct ice_pf *pf = iocb->ki_filp->private_data;
 	struct ice_hw *hw = &pf->hw;
 	char user_val[8], *cmd_buf;
 	bool enable;
 	ssize_t ret;
+	size_t count = iov_iter_count(from);
 
 	/* don't allow partial writes or invalid input */
-	if (*ppos != 0 || count > 2)
+	if (iocb->ki_pos != 0 || count > 2)
 		return -EINVAL;
 
-	cmd_buf = memdup_user_nul(buf, count);
+	cmd_buf = iterdup_nul(from, count);
 	if (IS_ERR(cmd_buf))
 		return PTR_ERR(cmd_buf);
 
@@ -380,22 +368,19 @@ enable_write_error:
 static const struct file_operations ice_debugfs_enable_fops = {
 	.owner = THIS_MODULE,
 	.open  = simple_open,
-	.read = ice_debugfs_enable_read,
-	.write = ice_debugfs_enable_write,
+	.read_iter = ice_debugfs_enable_read_iter,
+	.write_iter = ice_debugfs_enable_write_iter,
 };
 
 /**
- * ice_debugfs_log_size_read - read from 'log_size' file
- * @filp: the opened file
- * @buffer: where to write the data for the user to read
- * @count: the size of the user's buffer
- * @ppos: file position offset
+ * ice_debugfs_log_size_read_iter - read from 'log_size' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @to: iovec iterator
  */
-static ssize_t ice_debugfs_log_size_read(struct file *filp,
-					 char __user *buffer, size_t count,
-					 loff_t *ppos)
+static ssize_t ice_debugfs_log_size_read_iter(struct kiocb *iocb,
+					      struct iov_iter *to)
 {
-	struct ice_pf *pf = filp->private_data;
+	struct ice_pf *pf = iocb->ki_filp->private_data;
 	struct ice_hw *hw = &pf->hw;
 	char buff[32] = {};
 	int index;
@@ -403,32 +388,30 @@ static ssize_t ice_debugfs_log_size_read(struct file *filp,
 	index = hw->fwlog_ring.index;
 	snprintf(buff, sizeof(buff), "%s\n", ice_fwlog_log_size[index]);
 
-	return simple_read_from_buffer(buffer, count, ppos, buff, strlen(buff));
+	return simple_copy_to_iter(buff, &iocb->ki_pos, strlen(buff), to);
 }
 
 /**
- * ice_debugfs_log_size_write - write into 'log_size' file
- * @filp: the opened file
- * @buf: where to find the user's data
- * @count: the length of the user's data
- * @ppos: file position offset
+ * ice_debugfs_log_size_write_iter - write into 'log_size' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @from: iovec iterator
  */
 static ssize_t
-ice_debugfs_log_size_write(struct file *filp, const char __user *buf,
-			   size_t count, loff_t *ppos)
+ice_debugfs_log_size_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ice_pf *pf = filp->private_data;
+	struct ice_pf *pf = iocb->ki_filp->private_data;
 	struct device *dev = ice_pf_to_dev(pf);
 	struct ice_hw *hw = &pf->hw;
 	char user_val[8], *cmd_buf;
 	ssize_t ret;
 	int index;
+	size_t count = iov_iter_count(from);
 
 	/* don't allow partial writes or invalid input */
-	if (*ppos != 0 || count > 5)
+	if (iocb->ki_pos != 0 || count > 5)
 		return -EINVAL;
 
-	cmd_buf = memdup_user_nul(buf, count);
+	cmd_buf = iterdup_nul(from, count);
 	if (IS_ERR(cmd_buf))
 		return PTR_ERR(cmd_buf);
 
@@ -470,24 +453,23 @@ log_size_write_error:
 static const struct file_operations ice_debugfs_log_size_fops = {
 	.owner = THIS_MODULE,
 	.open  = simple_open,
-	.read = ice_debugfs_log_size_read,
-	.write = ice_debugfs_log_size_write,
+	.read_iter = ice_debugfs_log_size_read_iter,
+	.write_iter = ice_debugfs_log_size_write_iter,
 };
 
 /**
- * ice_debugfs_data_read - read from 'data' file
- * @filp: the opened file
- * @buffer: where to write the data for the user to read
- * @count: the size of the user's buffer
- * @ppos: file position offset
+ * ice_debugfs_data_read_iter - read from 'data' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @to: iovec iterator
  */
-static ssize_t ice_debugfs_data_read(struct file *filp, char __user *buffer,
-				     size_t count, loff_t *ppos)
+static ssize_t ice_debugfs_data_read_iter(struct kiocb *iocb,
+					  struct iov_iter *to)
 {
-	struct ice_pf *pf = filp->private_data;
+	struct ice_pf *pf = iocb->ki_filp->private_data;
 	struct ice_hw *hw = &pf->hw;
 	int data_copied = 0;
 	bool done = false;
+	size_t count = iov_iter_count(to);
 
 	if (ice_fwlog_ring_empty(&hw->fwlog_ring))
 		return 0;
@@ -503,7 +485,7 @@ static ssize_t ice_debugfs_data_read(struct file *filp, char __user *buffer,
 			continue;
 		}
 
-		if (copy_to_user(buffer, log->data, cur_buf_len)) {
+		if (!copy_to_iter_full(log->data, cur_buf_len, to)) {
 			/* if there is an error then bail and return whatever
 			 * the driver has copied so far
 			 */
@@ -512,9 +494,8 @@ static ssize_t ice_debugfs_data_read(struct file *filp, char __user *buffer,
 		}
 
 		data_copied += cur_buf_len;
-		buffer += cur_buf_len;
 		count -= cur_buf_len;
-		*ppos += cur_buf_len;
+		iocb->ki_pos += cur_buf_len;
 		ice_fwlog_ring_increment(&hw->fwlog_ring.head,
 					 hw->fwlog_ring.size);
 	}
@@ -523,23 +504,21 @@ static ssize_t ice_debugfs_data_read(struct file *filp, char __user *buffer,
 }
 
 /**
- * ice_debugfs_data_write - write into 'data' file
- * @filp: the opened file
- * @buf: where to find the user's data
- * @count: the length of the user's data
- * @ppos: file position offset
+ * ice_debugfs_data_write_iter - write into 'data' file
+ * @iocb: the kernel io callback (kiocb) struct
+ * @from: iovec iterator
  */
 static ssize_t
-ice_debugfs_data_write(struct file *filp, const char __user *buf, size_t count,
-		       loff_t *ppos)
+ice_debugfs_data_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ice_pf *pf = filp->private_data;
+	struct ice_pf *pf = iocb->ki_filp->private_data;
 	struct device *dev = ice_pf_to_dev(pf);
 	struct ice_hw *hw = &pf->hw;
 	ssize_t ret;
+	size_t count = iov_iter_count(from);
 
 	/* don't allow partial writes */
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	/* any value is allowed to clear the buffer so no need to even look at
@@ -573,8 +552,8 @@ nr_buffs_write_error:
 static const struct file_operations ice_debugfs_data_fops = {
 	.owner = THIS_MODULE,
 	.open  = simple_open,
-	.read = ice_debugfs_data_read,
-	.write = ice_debugfs_data_write,
+	.read_iter = ice_debugfs_data_read_iter,
+	.write_iter = ice_debugfs_data_write_iter,
 };
 
 /**
