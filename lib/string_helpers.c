@@ -138,10 +138,27 @@ int string_get_size(u64 size, u64 blk_size, const enum string_size_units units,
 }
 EXPORT_SYMBOL(string_get_size);
 
-static int __parse_int_array(char *buf, int **array)
+/**
+ * parse_int_array_iter - Split string into a sequence of integers
+ * @from:	The iov_iter buffer to read from
+ * @array:	Returned pointer to sequence of integers
+ *
+ * On success @array is allocated and initialized with a sequence of
+ * integers extracted from the @from plus an additional element that
+ * begins the sequence and specifies the integers count.
+ *
+ * Caller takes responsibility for freeing @array when it is no longer
+ * needed.
+ */
+int parse_int_array_iter(struct iov_iter *from, int **array)
 {
 	int *ints, nints;
 	int ret = 0;
+	char *buf;
+
+	buf = iterdup_nul(from, iov_iter_count(from));
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
 
 	get_options(buf, 0, &nints);
 	if (!nints) {
@@ -161,49 +178,7 @@ static int __parse_int_array(char *buf, int **array)
 free_buf:
 	kfree(buf);
 	return ret;
-}
 
-/**
- * parse_int_array_user - Split string into a sequence of integers
- * @from:	The user space buffer to read from
- * @count:	The maximum number of bytes to read
- * @array:	Returned pointer to sequence of integers
- *
- * On success @array is allocated and initialized with a sequence of
- * integers extracted from the @from plus an additional element that
- * begins the sequence and specifies the integers count.
- *
- * Caller takes responsibility for freeing @array when it is no longer
- * needed.
- */
-int parse_int_array_user(const char __user *from, size_t count, int **array)
-{
-	char *buf;
-
-	buf = memdup_user_nul(from, count);
-	if (IS_ERR(buf))
-		return PTR_ERR(buf);
-
-	return __parse_int_array(buf, array);
-}
-EXPORT_SYMBOL(parse_int_array_user);
-
-/**
- * parse_int_array_iter - Split string into a sequence of integers
- * @from:	The iov_iter buffer to read from
- * @array:	Returned pointer to sequence of integers
- *
- * See @parse_int_array_user, this is just the iov_iter variant.
- */
-int parse_int_array_iter(struct iov_iter *from, int **array)
-{
-	char *buf;
-
-	buf = iterdup_nul(from, iov_iter_count(from));
-	if (IS_ERR(buf))
-		return PTR_ERR(buf);
-
-	return __parse_int_array(buf, array);
 }
 EXPORT_SYMBOL(parse_int_array_iter);
 
