@@ -71,11 +71,11 @@ static inline struct ipmb_dev *to_ipmb_dev(struct file *file)
 	return container_of(file->private_data, struct ipmb_dev, miscdev);
 }
 
-static ssize_t ipmb_read(struct file *file, char __user *buf, size_t count,
-			loff_t *ppos)
+static ssize_t ipmb_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ipmb_dev *ipmb_dev = to_ipmb_dev(file);
+	struct ipmb_dev *ipmb_dev = to_ipmb_dev(iocb->ki_filp);
 	struct ipmb_request_elem *queue_elem;
+	size_t count = iov_iter_count(to);
 	struct ipmb_msg msg;
 	ssize_t ret = 0;
 
@@ -86,7 +86,7 @@ static ssize_t ipmb_read(struct file *file, char __user *buf, size_t count,
 	while (list_empty(&ipmb_dev->request_queue)) {
 		spin_unlock_irq(&ipmb_dev->lock);
 
-		if (file->f_flags & O_NONBLOCK)
+		if (iocb->ki_filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
 		ret = wait_event_interruptible(ipmb_dev->wait_queue,
@@ -107,7 +107,7 @@ static ssize_t ipmb_read(struct file *file, char __user *buf, size_t count,
 	spin_unlock_irq(&ipmb_dev->lock);
 
 	count = min_t(size_t, count, msg.len + 1);
-	if (copy_to_user(buf, &msg, count))
+	if (!copy_to_iter_full(&msg, count, to))
 		ret = -EFAULT;
 
 	return ret < 0 ? ret : count;
@@ -176,6 +176,7 @@ static ssize_t ipmb_write(struct file *file, const char __user *buf,
 
 	return ret < 0 ? ret : count;
 }
+FOPS_WRITE_ITER_HELPER(ipmb_write);
 
 static __poll_t ipmb_poll(struct file *file, poll_table *wait)
 {
@@ -193,10 +194,10 @@ static __poll_t ipmb_poll(struct file *file, poll_table *wait)
 }
 
 static const struct file_operations ipmb_fops = {
-	.owner	= THIS_MODULE,
-	.read	= ipmb_read,
-	.write	= ipmb_write,
-	.poll	= ipmb_poll,
+	.owner		= THIS_MODULE,
+	.read_iter	= ipmb_read,
+	.write_iter	= ipmb_write_iter,
+	.poll		= ipmb_poll,
 };
 
 /* Called with ipmb_dev->lock held. */

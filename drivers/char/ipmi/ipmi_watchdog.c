@@ -37,6 +37,7 @@
 #include <linux/delay.h>
 #include <linux/atomic.h>
 #include <linux/sched/signal.h>
+#include <linux/uio.h>
 
 #ifdef CONFIG_X86
 /*
@@ -777,12 +778,11 @@ static ssize_t ipmi_write(struct file *file,
 	}
 	return len;
 }
+FOPS_WRITE_ITER_HELPER(ipmi_write);
 
-static ssize_t ipmi_read(struct file *file,
-			 char        __user *buf,
-			 size_t      count,
-			 loff_t      *ppos)
+static ssize_t ipmi_read(struct kiocb *iocb, struct iov_iter *to)
 {
+	size_t count = iov_iter_count(to);
 	int          rv = 0;
 	wait_queue_entry_t wait;
 
@@ -795,7 +795,7 @@ static ssize_t ipmi_read(struct file *file,
 	 */
 	spin_lock_irq(&ipmi_read_lock);
 	if (!data_to_read) {
-		if (file->f_flags & O_NONBLOCK) {
+		if (iocb->ki_filp->f_flags & O_NONBLOCK) {
 			rv = -EAGAIN;
 			goto out;
 		}
@@ -821,7 +821,7 @@ static ssize_t ipmi_read(struct file *file,
 	spin_unlock_irq(&ipmi_read_lock);
 
 	if (rv == 0) {
-		if (copy_to_user(buf, &data_to_read, 1))
+		if (!copy_to_iter_full(&data_to_read, 1, to))
 			rv = -EFAULT;
 		else
 			rv = 1;
@@ -895,9 +895,9 @@ static int ipmi_close(struct inode *ino, struct file *filep)
 
 static const struct file_operations ipmi_wdog_fops = {
 	.owner   = THIS_MODULE,
-	.read    = ipmi_read,
+	.read_iter    = ipmi_read,
 	.poll    = ipmi_poll,
-	.write   = ipmi_write,
+	.write_iter   = ipmi_write_iter,
 	.unlocked_ioctl = ipmi_unlocked_ioctl,
 	.compat_ioctl	= compat_ptr_ioctl,
 	.open    = ipmi_open,
