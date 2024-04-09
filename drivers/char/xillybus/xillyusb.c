@@ -1602,6 +1602,7 @@ static ssize_t xillyusb_read(struct file *filp, char __user *userbuf,
 
 	return rc;
 }
+FOPS_READ_ITER_HELPER(xillyusb_read);
 
 static int xillyusb_flush(struct file *filp, fl_owner_t id)
 {
@@ -1702,6 +1703,7 @@ done:
 
 	return rc;
 }
+FOPS_WRITE_ITER_HELPER(xillyusb_write);
 
 static int xillyusb_release(struct inode *inode, struct file *filp)
 {
@@ -1892,8 +1894,8 @@ static __poll_t xillyusb_poll(struct file *filp, poll_table *wait)
 
 static const struct file_operations xillyusb_fops = {
 	.owner      = THIS_MODULE,
-	.read       = xillyusb_read,
-	.write      = xillyusb_write,
+	.read_iter  = xillyusb_read_iter,
+	.write_iter = xillyusb_write_iter,
 	.open       = xillyusb_open,
 	.flush      = xillyusb_flush,
 	.release    = xillyusb_release,
