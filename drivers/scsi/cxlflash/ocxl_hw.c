@@ -1003,17 +1003,14 @@ static unsigned int afu_poll(struct file *file, struct poll_table_struct *poll)
 
 /**
  * afu_read() - perform a read on the context for any event
- * @file:	File associated with the adapter context.
- * @buf:	Buffer to receive the data.
- * @count:	Size of buffer (maximum bytes that can be read).
- * @off:	Offset.
+ * @iocb:	Metadata for IO
+ * @to:		Buffer to receive the data.
  *
  * Return: size of the data read on success, -errno on failure
  */
-static ssize_t afu_read(struct file *file, char __user *buf, size_t count,
-			loff_t *off)
+static ssize_t afu_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ocxlflash_context *ctx = file->private_data;
+	struct ocxlflash_context *ctx = iocb->ki_filp->private_data;
 	struct device *dev = ctx->hw_afu->dev;
 	struct cxl_event event;
 	ulong lock_flags;
@@ -1022,9 +1019,9 @@ static ssize_t afu_read(struct file *file, char __user *buf, size_t count,
 	int bit;
 	DEFINE_WAIT(event_wait);
 
-	if (*off != 0) {
+	if (iocb->ki_pos != 0) {
 		dev_err(dev, "%s: Non-zero offset not supported, off=%lld\n",
-			__func__, *off);
+			__func__, iocb->ki_pos);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1037,7 +1034,7 @@ static ssize_t afu_read(struct file *file, char __user *buf, size_t count,
 		if (ctx_event_pending(ctx) || (ctx->state == CLOSED))
 			break;
 
-		if (file->f_flags & O_NONBLOCK) {
+		if (iocb->ki_filp->f_flags & O_NONBLOCK) {
 			dev_err(dev, "%s: File cannot be blocked on I/O\n",
 				__func__);
 			rc = -EAGAIN;
@@ -1081,7 +1078,7 @@ static ssize_t afu_read(struct file *file, char __user *buf, size_t count,
 
 	spin_unlock_irqrestore(&ctx->slock, lock_flags);
 
-	if (copy_to_user(buf, &event, event.header.size)) {
+	if (!copy_to_iter_full(&event, event.header.size, to)) {
 		dev_err(dev, "%s: copy_to_user failed\n", __func__);
 		rc = -EFAULT;
 		goto out;
@@ -1176,7 +1173,7 @@ static int afu_mmap(struct file *file, struct vm_area_struct *vma)
 static const struct file_operations ocxl_afu_fops = {
 	.owner		= THIS_MODULE,
 	.poll		= afu_poll,
-	.read		= afu_read,
+	.read_iter	= afu_read,
 	.release	= afu_release,
 	.mmap		= afu_mmap,
 };
@@ -1224,7 +1221,7 @@ static struct file *ocxlflash_get_fd(void *ctx_cookie,
 	/* Patch the file ops that are not defined */
 	if (fops) {
 		PATCH_FOPS(poll);
-		PATCH_FOPS(read);
+		PATCH_FOPS(read_iter);
 		PATCH_FOPS(release);
 		PATCH_FOPS(mmap);
 	} else /* Use default ops */
