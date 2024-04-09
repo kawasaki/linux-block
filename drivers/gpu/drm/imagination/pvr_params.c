@@ -119,8 +119,8 @@ static struct {
 		.owner = THIS_MODULE,                      \
 		.open = __pvr_device_param_##name_##_open, \
 		.release = simple_attr_release,            \
-		.read = simple_attr_read,                  \
-		.write = simple_attr_write,                \
+		.read_iter = simple_attr_read_iter,        \
+		.write_iter = simple_attr_write_iter,      \
 		.llseek = generic_file_llseek,             \
 	},
 	PVR_DEVICE_PARAMS
