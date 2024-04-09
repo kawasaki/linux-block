@@ -295,14 +295,14 @@ static int rwtm_debug_open(struct inode *inode, struct file *file)
 	return nonseekable_open(inode, file);
 }
 
-static ssize_t do_sign_read(struct file *file, char __user *buf, size_t len,
-			    loff_t *ppos)
+static ssize_t do_sign_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct mox_rwtm *rwtm = file->private_data;
+	struct mox_rwtm *rwtm = iocb->ki_filp->private_data;
+	size_t len = iov_iter_count(to);
 	ssize_t ret;
 
 	/* only allow one read, of whole signature, from position 0 */
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
 	if (len < sizeof(rwtm->last_sig))
@@ -311,18 +311,18 @@ static ssize_t do_sign_read(struct file *file, char __user *buf, size_t len,
 	if (!rwtm->last_sig_done)
 		return -ENODATA;
 
-	ret = simple_read_from_buffer(buf, len, ppos, rwtm->last_sig,
-				      sizeof(rwtm->last_sig));
+	/* 2 arrays of 17 32-bit words are 136 bytes */
+	ret = simple_copy_to_iter(rwtm->last_sig, &iocb->ki_pos,
+				  sizeof(rwtm->last_sig), to);
 	rwtm->last_sig_done = false;
-
 	return ret;
 }
 
-static ssize_t do_sign_write(struct file *file, const char __user *buf,
-			     size_t len, loff_t *ppos)
+static ssize_t do_sign_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct mox_rwtm *rwtm = file->private_data;
+	struct mox_rwtm *rwtm = iocb->ki_filp->private_data;
 	struct armada_37xx_rwtm_tx_msg msg;
+	size_t len = iov_iter_count(from);
 	loff_t dummy = 0;
 	ssize_t ret;
 
@@ -348,8 +348,8 @@ static ssize_t do_sign_write(struct file *file, const char __user *buf,
 	 *      stored by the rWTM firmware.
 	 */
 	memset(rwtm->buf, 0, sizeof(u32));
-	ret = simple_write_to_buffer(rwtm->buf + sizeof(u32),
-				     SHA512_DIGEST_SIZE, &dummy, buf, len);
+	ret = simple_copy_from_iter(rwtm->buf + sizeof(u32), &dummy,
+				    SHA512_DIGEST_SIZE, from);
 	if (ret < 0)
 		goto unlock_mutex;
 	be32_to_cpu_array(rwtm->buf, rwtm->buf, MOX_ECC_NUMBER_WORDS);
@@ -384,8 +384,8 @@ unlock_mutex:
 static const struct file_operations do_sign_fops = {
 	.owner	= THIS_MODULE,
 	.open	= rwtm_debug_open,
-	.read	= do_sign_read,
-	.write	= do_sign_write,
+	.read_iter	= do_sign_read,
+	.write_iter	= do_sign_write,
 };
 
 static void rwtm_debugfs_release(void *root)
