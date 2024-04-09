@@ -3763,17 +3763,17 @@ static int skl_watermark_ipc_status_open(struct inode *inode, struct file *file)
 	return single_open(file, skl_watermark_ipc_status_show, i915);
 }
 
-static ssize_t skl_watermark_ipc_status_write(struct file *file,
-					      const char __user *ubuf,
-					      size_t len, loff_t *offp)
+static ssize_t skl_watermark_ipc_status_write(struct kiocb *iocb,
+					      struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct drm_i915_private *i915 = m->private;
+	size_t len = iov_iter_count(from);
 	intel_wakeref_t wakeref;
 	bool enable;
 	int ret;
 
-	ret = kstrtobool_from_user(ubuf, len, &enable);
+	ret = kstrtobool_from_iter(from, len, &enable);
 	if (ret < 0)
 		return ret;
 
@@ -3791,10 +3791,10 @@ static ssize_t skl_watermark_ipc_status_write(struct file *file,
 static const struct file_operations skl_watermark_ipc_status_fops = {
 	.owner = THIS_MODULE,
 	.open = skl_watermark_ipc_status_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = skl_watermark_ipc_status_write
+	.write_iter = skl_watermark_ipc_status_write
 };
 
 static int intel_sagv_status_show(struct seq_file *m, void *unused)

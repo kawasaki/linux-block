@@ -1019,13 +1019,13 @@ static int i915_hpd_storm_ctl_show(struct seq_file *m, void *data)
 	return 0;
 }
 
-static ssize_t i915_hpd_storm_ctl_write(struct file *file,
-					const char __user *ubuf, size_t len,
-					loff_t *offp)
+static ssize_t i915_hpd_storm_ctl_write(struct kiocb *iocb,
+					struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct drm_i915_private *dev_priv = m->private;
 	struct intel_hotplug *hotplug = &dev_priv->display.hotplug;
+	size_t len = iov_iter_count(from);
 	unsigned int new_threshold;
 	int i;
 	char *newline;
@@ -1034,7 +1034,7 @@ static ssize_t i915_hpd_storm_ctl_write(struct file *file,
 	if (len >= sizeof(tmp))
 		return -EINVAL;
 
-	if (copy_from_user(tmp, ubuf, len))
+	if (!copy_from_iter_full(tmp, len, from))
 		return -EFAULT;
 
 	tmp[len] = '\0';
@@ -1077,10 +1077,10 @@ static int i915_hpd_storm_ctl_open(struct inode *inode, struct file *file)
 static const struct file_operations i915_hpd_storm_ctl_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_hpd_storm_ctl_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = i915_hpd_storm_ctl_write
+	.write_iter = i915_hpd_storm_ctl_write
 };
 
 static int i915_hpd_short_storm_ctl_show(struct seq_file *m, void *data)
@@ -1100,13 +1100,13 @@ i915_hpd_short_storm_ctl_open(struct inode *inode, struct file *file)
 			   inode->i_private);
 }
 
-static ssize_t i915_hpd_short_storm_ctl_write(struct file *file,
-					      const char __user *ubuf,
-					      size_t len, loff_t *offp)
+static ssize_t i915_hpd_short_storm_ctl_write(struct kiocb *iocb,
+					      struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct drm_i915_private *dev_priv = m->private;
 	struct intel_hotplug *hotplug = &dev_priv->display.hotplug;
+	size_t len = iov_iter_count(from);
 	char *newline;
 	char tmp[16];
 	int i;
@@ -1115,7 +1115,7 @@ static ssize_t i915_hpd_short_storm_ctl_write(struct file *file,
 	if (len >= sizeof(tmp))
 		return -EINVAL;
 
-	if (copy_from_user(tmp, ubuf, len))
+	if (!copy_from_iter_full(tmp, len, from))
 		return -EFAULT;
 
 	tmp[len] = '\0';
@@ -1150,10 +1150,10 @@ static ssize_t i915_hpd_short_storm_ctl_write(struct file *file,
 static const struct file_operations i915_hpd_short_storm_ctl_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_hpd_short_storm_ctl_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = i915_hpd_short_storm_ctl_write,
+	.write_iter = i915_hpd_short_storm_ctl_write,
 };
 
 void intel_hpd_debugfs_register(struct drm_i915_private *i915)

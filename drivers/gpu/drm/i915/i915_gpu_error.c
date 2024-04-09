@@ -2382,14 +2382,14 @@ void intel_klog_error_capture(struct intel_gt *gt,
 }
 #endif
 
-static ssize_t gpu_state_read(struct file *file, char __user *ubuf,
-			      size_t count, loff_t *pos)
+static ssize_t gpu_state_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct i915_gpu_coredump *error;
+	size_t count = iov_iter_count(to);
 	ssize_t ret;
 	void *buf;
 
-	error = file->private_data;
+	error = iocb->ki_filp->private_data;
 	if (!error)
 		return 0;
 
@@ -2398,12 +2398,12 @@ static ssize_t gpu_state_read(struct file *file, char __user *ubuf,
 	if (!buf)
 		return -ENOMEM;
 
-	ret = i915_gpu_coredump_copy_to_buffer(error, buf, *pos, count);
+	ret = i915_gpu_coredump_copy_to_buffer(error, buf, iocb->ki_pos, count);
 	if (ret <= 0)
 		goto out;
 
-	if (!copy_to_user(ubuf, buf, ret))
-		*pos += ret;
+	if (copy_to_iter_full(buf, ret, to))
+		iocb->ki_pos += ret;
 	else
 		ret = -EFAULT;
 
@@ -2438,18 +2438,14 @@ static int i915_gpu_info_open(struct inode *inode, struct file *file)
 static const struct file_operations i915_gpu_info_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_gpu_info_open,
-	.read = gpu_state_read,
+	.read_iter = gpu_state_read,
 	.llseek = default_llseek,
 	.release = gpu_state_release,
 };
 
-static ssize_t
-i915_error_state_write(struct file *filp,
-		       const char __user *ubuf,
-		       size_t cnt,
-		       loff_t *ppos)
+static ssize_t i915_error_state_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct i915_gpu_coredump *error = filp->private_data;
+	struct i915_gpu_coredump *error = iocb->ki_filp->private_data;
 
 	if (!error)
 		return 0;
@@ -2457,7 +2453,7 @@ i915_error_state_write(struct file *filp,
 	drm_dbg(&error->i915->drm, "Resetting error state\n");
 	i915_reset_error_state(error->i915);
 
-	return cnt;
+	return iov_iter_count(from);
 }
 
 static int i915_error_state_open(struct inode *inode, struct file *file)
@@ -2475,8 +2471,8 @@ static int i915_error_state_open(struct inode *inode, struct file *file)
 static const struct file_operations i915_error_state_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_error_state_open,
-	.read = gpu_state_read,
-	.write = i915_error_state_write,
+	.read_iter = gpu_state_read,
+	.write_iter = i915_error_state_write,
 	.llseek = default_llseek,
 	.release = gpu_state_release,
 };

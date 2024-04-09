@@ -1781,6 +1781,7 @@ static ssize_t i915_dp_force_link_rate_write(struct file *file,
 
 	return len;
 }
+FOPS_WRITE_ITER_HELPER(i915_dp_force_link_rate_write);
 DEFINE_SHOW_STORE_ATTRIBUTE(i915_dp_force_link_rate);
 
 static int i915_dp_force_lane_count_show(struct seq_file *m, void *data)
@@ -1883,6 +1884,7 @@ static ssize_t i915_dp_force_lane_count_write(struct file *file,
 
 	return len;
 }
+FOPS_WRITE_ITER_HELPER(i915_dp_force_lane_count_write);
 DEFINE_SHOW_STORE_ATTRIBUTE(i915_dp_force_lane_count);
 
 static int i915_dp_max_link_rate_show(void *data, u64 *val)

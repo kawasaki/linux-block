@@ -285,11 +285,12 @@ static int cur_wm_latency_open(struct inode *inode, struct file *file)
 	return single_open(file, cur_wm_latency_show, dev_priv);
 }
 
-static ssize_t wm_latency_write(struct file *file, const char __user *ubuf,
-				size_t len, loff_t *offp, u16 wm[8])
+static ssize_t wm_latency_write(struct kiocb *iocb, struct iov_iter *from,
+				u16 wm[8])
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct drm_i915_private *dev_priv = m->private;
+	size_t len = iov_iter_count(from);
 	u16 new[8] = {};
 	int level;
 	int ret;
@@ -298,7 +299,7 @@ static ssize_t wm_latency_write(struct file *file, const char __user *ubuf,
 	if (len >= sizeof(tmp))
 		return -EINVAL;
 
-	if (copy_from_user(tmp, ubuf, len))
+	if (!copy_from_iter_full(tmp, len, from))
 		return -EFAULT;
 
 	tmp[len] = '\0';
@@ -319,10 +320,9 @@ static ssize_t wm_latency_write(struct file *file, const char __user *ubuf,
 	return len;
 }
 
-static ssize_t pri_wm_latency_write(struct file *file, const char __user *ubuf,
-				    size_t len, loff_t *offp)
+static ssize_t pri_wm_latency_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct drm_i915_private *dev_priv = m->private;
 	u16 *latencies;
 
@@ -331,13 +331,12 @@ static ssize_t pri_wm_latency_write(struct file *file, const char __user *ubuf,
 	else
 		latencies = dev_priv->display.wm.pri_latency;
 
-	return wm_latency_write(file, ubuf, len, offp, latencies);
+	return wm_latency_write(iocb, from, latencies);
 }
 
-static ssize_t spr_wm_latency_write(struct file *file, const char __user *ubuf,
-				    size_t len, loff_t *offp)
+static ssize_t spr_wm_latency_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct drm_i915_private *dev_priv = m->private;
 	u16 *latencies;
 
@@ -346,13 +345,12 @@ static ssize_t spr_wm_latency_write(struct file *file, const char __user *ubuf,
 	else
 		latencies = dev_priv->display.wm.spr_latency;
 
-	return wm_latency_write(file, ubuf, len, offp, latencies);
+	return wm_latency_write(iocb, from, latencies);
 }
 
-static ssize_t cur_wm_latency_write(struct file *file, const char __user *ubuf,
-				    size_t len, loff_t *offp)
+static ssize_t cur_wm_latency_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct drm_i915_private *dev_priv = m->private;
 	u16 *latencies;
 
@@ -361,34 +359,34 @@ static ssize_t cur_wm_latency_write(struct file *file, const char __user *ubuf,
 	else
 		latencies = dev_priv->display.wm.cur_latency;
 
-	return wm_latency_write(file, ubuf, len, offp, latencies);
+	return wm_latency_write(iocb, from, latencies);
 }
 
 static const struct file_operations i915_pri_wm_latency_fops = {
 	.owner = THIS_MODULE,
 	.open = pri_wm_latency_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = pri_wm_latency_write
+	.write_iter = pri_wm_latency_write
 };
 
 static const struct file_operations i915_spr_wm_latency_fops = {
 	.owner = THIS_MODULE,
 	.open = spr_wm_latency_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = spr_wm_latency_write
+	.write_iter = spr_wm_latency_write
 };
 
 static const struct file_operations i915_cur_wm_latency_fops = {
 	.owner = THIS_MODULE,
 	.open = cur_wm_latency_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = cur_wm_latency_write
+	.write_iter = cur_wm_latency_write
 };
 
 void intel_wm_debugfs_register(struct drm_i915_private *i915)

@@ -509,26 +509,24 @@ static int crtc_updates_open(struct inode *inode, struct file *file)
 	return single_open(file, crtc_updates_show, inode->i_private);
 }
 
-static ssize_t crtc_updates_write(struct file *file,
-				  const char __user *ubuf,
-				  size_t len, loff_t *offp)
+static ssize_t crtc_updates_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct intel_crtc *crtc = m->private;
 
 	/* May race with an update. Meh. */
 	memset(&crtc->debug.vbl, 0, sizeof(crtc->debug.vbl));
 
-	return len;
+	return iov_iter_count(from);
 }
 
 static const struct file_operations crtc_updates_fops = {
 	.owner = THIS_MODULE,
 	.open = crtc_updates_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = crtc_updates_write
+	.write_iter = crtc_updates_write
 };
 
 static void crtc_updates_add(struct intel_crtc *crtc)
@@ -773,24 +771,24 @@ static int i915_dp_mst_info(struct seq_file *m, void *unused)
 	return 0;
 }
 
-static ssize_t i915_displayport_test_active_write(struct file *file,
-						  const char __user *ubuf,
-						  size_t len, loff_t *offp)
+static ssize_t i915_displayport_test_active_write(struct kiocb *iocb,
+						  struct iov_iter *from)
 {
 	char *input_buffer;
 	int status = 0;
 	struct drm_device *dev;
 	struct drm_connector *connector;
 	struct drm_connector_list_iter conn_iter;
+	size_t len = iov_iter_count(from);
 	struct intel_dp *intel_dp;
 	int val = 0;
 
-	dev = ((struct seq_file *)file->private_data)->private;
+	dev = ((struct seq_file *)iocb->ki_filp->private_data)->private;
 
 	if (len == 0)
 		return 0;
 
-	input_buffer = memdup_user_nul(ubuf, len);
+	input_buffer = iterdup_nul(from, len);
 	if (IS_ERR(input_buffer))
 		return PTR_ERR(input_buffer);
 
@@ -828,7 +826,7 @@ static ssize_t i915_displayport_test_active_write(struct file *file,
 	if (status < 0)
 		return status;
 
-	*offp += len;
+	iocb->ki_pos += len;
 	return len;
 }
 
@@ -875,10 +873,10 @@ static int i915_displayport_test_active_open(struct inode *inode,
 static const struct file_operations i915_displayport_test_active_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_displayport_test_active_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = i915_displayport_test_active_write
+	.write_iter = i915_displayport_test_active_write,
 };
 
 static int i915_displayport_test_data_show(struct seq_file *m, void *data)
@@ -966,16 +964,15 @@ static int i915_displayport_test_type_show(struct seq_file *m, void *data)
 DEFINE_SHOW_ATTRIBUTE(i915_displayport_test_type);
 
 static ssize_t
-i915_fifo_underrun_reset_write(struct file *filp,
-			       const char __user *ubuf,
-			       size_t cnt, loff_t *ppos)
+i915_fifo_underrun_reset_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct drm_i915_private *dev_priv = filp->private_data;
+	struct drm_i915_private *dev_priv = iocb->ki_filp->private_data;
+	size_t cnt = iov_iter_count(from);
 	struct intel_crtc *crtc;
 	int ret;
 	bool reset;
 
-	ret = kstrtobool_from_user(ubuf, cnt, &reset);
+	ret = kstrtobool_from_iter(from, cnt, &reset);
 	if (ret)
 		return ret;
 
@@ -1020,7 +1017,7 @@ i915_fifo_underrun_reset_write(struct file *filp,
 static const struct file_operations i915_fifo_underrun_reset_ops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.write = i915_fifo_underrun_reset_write,
+	.write_iter = i915_fifo_underrun_reset_write,
 	.llseek = default_llseek,
 };
 
@@ -1211,15 +1208,15 @@ static int i915_dsc_fec_support_show(struct seq_file *m, void *data)
 	return ret;
 }
 
-static ssize_t i915_dsc_fec_support_write(struct file *file,
-					  const char __user *ubuf,
-					  size_t len, loff_t *offp)
+static ssize_t i915_dsc_fec_support_write(struct kiocb *iocb,
+					  struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct intel_connector *connector = m->private;
 	struct drm_i915_private *i915 = to_i915(connector->base.dev);
 	struct intel_encoder *encoder = intel_attached_encoder(connector);
 	struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
+	size_t len = iov_iter_count(from);
 	bool dsc_enable = false;
 	int ret;
 
@@ -1229,7 +1226,7 @@ static ssize_t i915_dsc_fec_support_write(struct file *file,
 	drm_dbg(&i915->drm,
 		"Copied %zu bytes from user to force DSC\n", len);
 
-	ret = kstrtobool_from_user(ubuf, len, &dsc_enable);
+	ret = kstrtobool_from_iter(from, len, &dsc_enable);
 	if (ret < 0)
 		return ret;
 
@@ -1237,7 +1234,7 @@ static ssize_t i915_dsc_fec_support_write(struct file *file,
 		(dsc_enable) ? "true" : "false");
 	intel_dp->force_dsc_en = dsc_enable;
 
-	*offp += len;
+	iocb->ki_pos += len;
 	return len;
 }
 
@@ -1251,10 +1248,10 @@ static int i915_dsc_fec_support_open(struct inode *inode,
 static const struct file_operations i915_dsc_fec_support_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_dsc_fec_support_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = i915_dsc_fec_support_write
+	.write_iter = i915_dsc_fec_support_write
 };
 
 static int i915_dsc_bpc_show(struct seq_file *m, void *data)
@@ -1287,23 +1284,22 @@ out:	drm_modeset_unlock(&i915->drm.mode_config.connection_mutex);
 	return ret;
 }
 
-static ssize_t i915_dsc_bpc_write(struct file *file,
-				  const char __user *ubuf,
-				  size_t len, loff_t *offp)
+static ssize_t i915_dsc_bpc_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct intel_connector *connector = m->private;
 	struct intel_encoder *encoder = intel_attached_encoder(connector);
 	struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
+	size_t len = iov_iter_count(from);
 	int dsc_bpc = 0;
 	int ret;
 
-	ret = kstrtoint_from_user(ubuf, len, 0, &dsc_bpc);
+	ret = kstrtoint_from_iter(from, len, 0, &dsc_bpc);
 	if (ret < 0)
 		return ret;
 
 	intel_dp->force_dsc_bpc = dsc_bpc;
-	*offp += len;
+	iocb->ki_pos += len;
 
 	return len;
 }
@@ -1317,10 +1313,10 @@ static int i915_dsc_bpc_open(struct inode *inode,
 static const struct file_operations i915_dsc_bpc_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_dsc_bpc_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = i915_dsc_bpc_write
+	.write_iter = i915_dsc_bpc_write
 };
 
 static int i915_dsc_output_format_show(struct seq_file *m, void *data)
@@ -1354,24 +1350,23 @@ out:	drm_modeset_unlock(&i915->drm.mode_config.connection_mutex);
 	return ret;
 }
 
-static ssize_t i915_dsc_output_format_write(struct file *file,
-					    const char __user *ubuf,
-					    size_t len, loff_t *offp)
+static ssize_t i915_dsc_output_format_write(struct kiocb *iocb,
+					    struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct intel_connector *connector = m->private;
 	struct intel_encoder *encoder = intel_attached_encoder(connector);
 	struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
+	size_t len = iov_iter_count(from);
 	int dsc_output_format = 0;
 	int ret;
 
-	ret = kstrtoint_from_user(ubuf, len, 0, &dsc_output_format);
+	ret = kstrtoint_from_iter(from, len, 0, &dsc_output_format);
 	if (ret < 0)
 		return ret;
 
 	intel_dp->force_dsc_output_format = dsc_output_format;
-	*offp += len;
-
+	iocb->ki_pos += len;
 	return len;
 }
 
@@ -1384,10 +1379,10 @@ static int i915_dsc_output_format_open(struct inode *inode,
 static const struct file_operations i915_dsc_output_format_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_dsc_output_format_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = i915_dsc_output_format_write
+	.write_iter = i915_dsc_output_format_write
 };
 
 static int i915_dsc_fractional_bpp_show(struct seq_file *m, void *data)
@@ -1422,16 +1417,16 @@ out:
 	return ret;
 }
 
-static ssize_t i915_dsc_fractional_bpp_write(struct file *file,
-					     const char __user *ubuf,
-					     size_t len, loff_t *offp)
+static ssize_t i915_dsc_fractional_bpp_write(struct kiocb *iocb,
+					     struct iov_iter *from)
 {
-	struct seq_file *m = file->private_data;
+	struct seq_file *m = iocb->ki_filp->private_data;
 	struct intel_connector *connector = m->private;
 	struct intel_encoder *encoder = intel_attached_encoder(connector);
 	struct drm_i915_private *i915 = to_i915(connector->base.dev);
 	struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
 	bool dsc_fractional_bpp_enable = false;
+	size_t len = iov_iter_count(from);
 	int ret;
 
 	if (len == 0)
@@ -1440,7 +1435,7 @@ static ssize_t i915_dsc_fractional_bpp_write(struct file *file,
 	drm_dbg(&i915->drm,
 		"Copied %zu bytes from user to force fractional bpp for DSC\n", len);
 
-	ret = kstrtobool_from_user(ubuf, len, &dsc_fractional_bpp_enable);
+	ret = kstrtobool_from_iter(from, len, &dsc_fractional_bpp_enable);
 	if (ret < 0)
 		return ret;
 
@@ -1448,7 +1443,7 @@ static ssize_t i915_dsc_fractional_bpp_write(struct file *file,
 		(dsc_fractional_bpp_enable) ? "true" : "false");
 	intel_dp->force_dsc_fractional_bpp_en = dsc_fractional_bpp_enable;
 
-	*offp += len;
+	iocb->ki_pos += len;
 
 	return len;
 }
@@ -1462,10 +1457,10 @@ static int i915_dsc_fractional_bpp_open(struct inode *inode,
 static const struct file_operations i915_dsc_fractional_bpp_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_dsc_fractional_bpp_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = i915_dsc_fractional_bpp_write
+	.write_iter = i915_dsc_fractional_bpp_write
 };
 
 /*
