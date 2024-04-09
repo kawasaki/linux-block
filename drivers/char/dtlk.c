@@ -88,10 +88,8 @@ static wait_queue_head_t dtlk_process_list;
 static DEFINE_TIMER(dtlk_timer, dtlk_timer_tick);
 
 /* prototypes for file_operations struct */
-static ssize_t dtlk_read(struct file *, char __user *,
-			 size_t nbytes, loff_t * ppos);
-static ssize_t dtlk_write(struct file *, const char __user *,
-			  size_t nbytes, loff_t * ppos);
+static ssize_t dtlk_read_iter(struct kiocb *iocb, struct iov_iter *to);
+static ssize_t dtlk_write_iter(struct kiocb *iocb, struct iov_iter *from);
 static __poll_t dtlk_poll(struct file *, poll_table *);
 static int dtlk_open(struct inode *, struct file *);
 static int dtlk_release(struct inode *, struct file *);
@@ -101,8 +99,8 @@ static long dtlk_ioctl(struct file *file,
 static const struct file_operations dtlk_fops =
 {
 	.owner		= THIS_MODULE,
-	.read		= dtlk_read,
-	.write		= dtlk_write,
+	.read_iter	= dtlk_read_iter,
+	.write_iter	= dtlk_write_iter,
 	.poll		= dtlk_poll,
 	.unlocked_ioctl	= dtlk_ioctl,
 	.open		= dtlk_open,
@@ -154,6 +152,7 @@ static ssize_t dtlk_read(struct file *file, char __user *buf,
 	TRACE_RET;
 	return -EAGAIN;
 }
+FOPS_READ_ITER_HELPER(dtlk_read);
 
 static ssize_t dtlk_write(struct file *file, const char __user *buf,
 			  size_t count, loff_t * ppos)
@@ -227,6 +226,7 @@ static ssize_t dtlk_write(struct file *file, const char __user *buf,
 	TRACE_RET;
 	return -EAGAIN;
 }
+FOPS_WRITE_ITER_HELPER(dtlk_write);
 
 static __poll_t dtlk_poll(struct file *file, poll_table * wait)
 {
