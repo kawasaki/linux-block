@@ -242,6 +242,7 @@ static ssize_t dsp56k_read(struct file *file, char __user *buf, size_t count,
 		return -ENXIO;
 	}
 }
+FOPS_READ_ITER_HELPER(dsp56k_read);
 
 static ssize_t dsp56k_write(struct file *file, const char __user *buf, size_t count,
 			    loff_t *ppos)
@@ -304,6 +305,7 @@ static ssize_t dsp56k_write(struct file *file, const char __user *buf, size_t co
 		return -ENXIO;
 	}
 }
+FOPS_WRITE_ITER_HELPER(dsp56k_write);
 
 static long dsp56k_ioctl(struct file *file, unsigned int cmd,
 			 unsigned long arg)
@@ -480,8 +482,8 @@ static int dsp56k_release(struct inode *inode, struct file *file)
 
 static const struct file_operations dsp56k_fops = {
 	.owner		= THIS_MODULE,
-	.read		= dsp56k_read,
-	.write		= dsp56k_write,
+	.read_iter	= dsp56k_read_iter,
+	.write_iter	= dsp56k_write_iter,
 	.unlocked_ioctl	= dsp56k_ioctl,
 	.open		= dsp56k_open,
 	.release	= dsp56k_release,
