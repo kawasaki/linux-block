@@ -239,12 +239,14 @@ static ssize_t ps3flash_user_read(struct file *file, char __user *buf,
 {
 	return ps3flash_read(buf, NULL, count, pos);
 }
+FOPS_READ_ITER_HELPER(ps3flash_user_read);
 
 static ssize_t ps3flash_user_write(struct file *file, const char __user *buf,
 				   size_t count, loff_t *pos)
 {
 	return ps3flash_write(buf, NULL, count, pos);
 }
+FOPS_WRITE_ITER_HELPER(ps3flash_user_write);
 
 static ssize_t ps3flash_kernel_read(void *buf, size_t count, loff_t pos)
 {
@@ -310,8 +312,8 @@ static irqreturn_t ps3flash_interrupt(int irq, void *data)
 static const struct file_operations ps3flash_fops = {
 	.owner	= THIS_MODULE,
 	.llseek	= ps3flash_llseek,
-	.read	= ps3flash_user_read,
-	.write	= ps3flash_user_write,
+	.read_iter	= ps3flash_user_read_iter,
+	.write_iter	= ps3flash_user_write_iter,
 	.flush	= ps3flash_flush,
 	.fsync	= ps3flash_fsync,
 };
