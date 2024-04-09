@@ -1436,19 +1436,16 @@ static long dvb_ca_en50221_io_ioctl(struct file *file,
 /**
  * dvb_ca_en50221_io_write - Implementation of write() syscall.
  *
- * @file: File structure.
- * @buf: Source buffer.
- * @count: Size of source buffer.
- * @ppos: Position in file (ignored).
+ * @iocb: metadata for IO
+ * @from: buffer to read from
  *
  * return: Number of bytes read, or <0 on error.
  */
-static ssize_t dvb_ca_en50221_io_write(struct file *file,
-				       const char __user *buf, size_t count,
-				       loff_t *ppos)
+static ssize_t dvb_ca_en50221_io_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct dvb_device *dvbdev = file->private_data;
+	struct dvb_device *dvbdev = iocb->ki_filp->private_data;
 	struct dvb_ca_private *ca = dvbdev->priv;
+	size_t count = iov_iter_count(from);
 	struct dvb_ca_slot *sl;
 	u8 slot, connection_id;
 	int status;
@@ -1468,11 +1465,10 @@ static ssize_t dvb_ca_en50221_io_write(struct file *file,
 		return -EINVAL;
 
 	/* extract slot & connection id */
-	if (copy_from_user(&slot, buf, 1))
+	if (!copy_from_iter_full(&slot, 1, from))
 		return -EFAULT;
-	if (copy_from_user(&connection_id, buf + 1, 1))
+	if (!copy_from_iter_full(&connection_id, 1, from))
 		return -EFAULT;
-	buf += 2;
 	count -= 2;
 
 	if (slot >= ca->slot_count)
@@ -1496,7 +1492,7 @@ static ssize_t dvb_ca_en50221_io_write(struct file *file,
 
 		fragbuf[0] = connection_id;
 		fragbuf[1] = ((fragpos + fraglen) < count) ? 0x80 : 0x00;
-		status = copy_from_user(fragbuf + 2, buf + fragpos, fraglen);
+		status = !copy_from_iter_full(fragbuf + 2, fraglen, from);
 		if (status) {
 			status = -EFAULT;
 			goto exit;
@@ -1699,6 +1695,7 @@ static ssize_t dvb_ca_en50221_io_read(struct file *file, char __user *buf,
 exit:
 	return status;
 }
+FOPS_READ_ITER_HELPER(dvb_ca_en50221_io_read);
 
 /**
  * dvb_ca_en50221_io_open - Implementation of file open syscall.
@@ -1834,8 +1831,8 @@ static __poll_t dvb_ca_en50221_io_poll(struct file *file, poll_table *wait)
 
 static const struct file_operations dvb_ca_fops = {
 	.owner = THIS_MODULE,
-	.read = dvb_ca_en50221_io_read,
-	.write = dvb_ca_en50221_io_write,
+	.read_iter = dvb_ca_en50221_io_read_iter,
+	.write_iter = dvb_ca_en50221_io_write,
 	.unlocked_ioctl = dvb_ca_en50221_io_ioctl,
 	.open = dvb_ca_en50221_io_open,
 	.release = dvb_ca_en50221_io_release,
