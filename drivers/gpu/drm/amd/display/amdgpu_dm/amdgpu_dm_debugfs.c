@@ -250,6 +250,7 @@ static ssize_t dp_link_settings_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_link_settings_read);
 
 static ssize_t dp_link_settings_write(struct file *f, const char __user *buf,
 				 size_t size, loff_t *pos)
@@ -337,6 +338,7 @@ static ssize_t dp_link_settings_write(struct file *f, const char __user *buf,
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_link_settings_write);
 
 static bool dp_mst_is_end_device(struct amdgpu_dm_connector *aconnector)
 {
@@ -484,6 +486,7 @@ static ssize_t dp_mst_link_setting(struct file *f, const char __user *buf,
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_mst_link_setting);
 
 /* function: get current DP PHY settings: voltage swing, pre-emphasis,
  * post-cursor2 (defined by VESA DP specification)
@@ -567,6 +570,7 @@ static ssize_t dp_phy_settings_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_phy_settings_read);
 
 static int dp_lttpr_status_show(struct seq_file *m, void *unused)
 {
@@ -687,6 +691,7 @@ static ssize_t dp_phy_settings_write(struct file *f, const char __user *buf,
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_phy_settings_write);
 
 /* function description
  *
@@ -893,6 +898,7 @@ static ssize_t dp_phy_test_pattern_debugfs_write(struct file *f, const char __us
 
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_phy_test_pattern_debugfs_write);
 
 /*
  * Returns the DMCUB tracebuffer contents.
@@ -1202,6 +1208,7 @@ static ssize_t dp_dsc_passthrough_set(struct file *f, const char __user *buf,
 	kfree(wr_buf);
 	return 0;
 }
+FOPS_WRITE_ITER_HELPER(dp_dsc_passthrough_set);
 
 /*
  * Returns the HDCP capability of the Display (1.4 for now).
@@ -1323,6 +1330,7 @@ static ssize_t dp_sdp_message_debugfs_write(struct file *f, const char __user *b
 
 	return write_size;
 }
+FOPS_WRITE_ITER_HELPER(dp_sdp_message_debugfs_write);
 
 /* function: Read link's DSC & FEC capabilities
  *
@@ -1509,6 +1517,7 @@ unlock:
 
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(trigger_hotplug);
 
 /* function: read DSC status on the connector
  *
@@ -1582,6 +1591,7 @@ static ssize_t dp_dsc_clock_en_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_dsc_clock_en_read);
 
 /* function: write force DSC on the connector
  *
@@ -1698,6 +1708,7 @@ done:
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_dsc_clock_en_write);
 
 /* function: read DSC slice width parameter on the connector
  *
@@ -1772,6 +1783,7 @@ static ssize_t dp_dsc_slice_width_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_dsc_slice_width_read);
 
 /* function: write DSC slice width parameter
  *
@@ -1886,6 +1898,7 @@ done:
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_dsc_slice_width_write);
 
 /* function: read DSC slice height parameter on the connector
  *
@@ -1960,6 +1973,7 @@ static ssize_t dp_dsc_slice_height_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_dsc_slice_height_read);
 
 /* function: write DSC slice height parameter
  *
@@ -2074,6 +2088,7 @@ done:
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_dsc_slice_height_write);
 
 /* function: read DSC target rate on the connector in bits per pixel
  *
@@ -2144,6 +2159,7 @@ static ssize_t dp_dsc_bits_per_pixel_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_dsc_bits_per_pixel_read);
 
 /* function: write DSC target rate in bits per pixel
  *
@@ -2250,6 +2266,7 @@ done:
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_dsc_bits_per_pixel_write);
 
 /* function: read DSC picture width parameter on the connector
  *
@@ -2323,6 +2340,7 @@ static ssize_t dp_dsc_pic_width_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_dsc_pic_width_read);
 
 static ssize_t dp_dsc_pic_height_read(struct file *f, char __user *buf,
 				    size_t size, loff_t *pos)
@@ -2381,6 +2399,7 @@ static ssize_t dp_dsc_pic_height_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_dsc_pic_height_read);
 
 /* function: read DSC chunk size parameter on the connector
  *
@@ -2454,6 +2473,7 @@ static ssize_t dp_dsc_chunk_size_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dp_dsc_chunk_size_read);
 
 /* function: read DSC slice bpg offset on the connector
  *
@@ -2527,7 +2547,7 @@ static ssize_t dp_dsc_slice_bpg_offset_read(struct file *f, char __user *buf,
 	kfree(rd_buf);
 	return result;
 }
-
+FOPS_READ_ITER_HELPER(dp_dsc_slice_bpg_offset_read);
 
 /*
  * function description: Read max_requested_bpc property from the connector
@@ -2588,7 +2608,7 @@ unlock:
 	kfree(rd_buf);
 	return result;
 }
-
+FOPS_READ_ITER_HELPER(dp_max_bpc_read);
 
 /*
  * function description: Set max_requested_bpc property on the connector
@@ -2670,6 +2690,7 @@ unlock:
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(dp_max_bpc_write);
 
 /*
  * IPS status.  Read only.
@@ -2872,104 +2893,104 @@ DEFINE_SHOW_ATTRIBUTE(is_dpia_link);
 
 static const struct file_operations dp_dsc_clock_en_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_dsc_clock_en_read,
-	.write = dp_dsc_clock_en_write,
+	.read_iter = dp_dsc_clock_en_read_iter,
+	.write_iter = dp_dsc_clock_en_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_dsc_slice_width_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_dsc_slice_width_read,
-	.write = dp_dsc_slice_width_write,
+	.read_iter = dp_dsc_slice_width_read_iter,
+	.write_iter = dp_dsc_slice_width_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_dsc_slice_height_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_dsc_slice_height_read,
-	.write = dp_dsc_slice_height_write,
+	.read_iter = dp_dsc_slice_height_read_iter,
+	.write_iter = dp_dsc_slice_height_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_dsc_bits_per_pixel_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_dsc_bits_per_pixel_read,
-	.write = dp_dsc_bits_per_pixel_write,
+	.read_iter = dp_dsc_bits_per_pixel_read_iter,
+	.write_iter = dp_dsc_bits_per_pixel_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_dsc_pic_width_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_dsc_pic_width_read,
+	.read_iter = dp_dsc_pic_width_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_dsc_pic_height_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_dsc_pic_height_read,
+	.read_iter = dp_dsc_pic_height_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_dsc_chunk_size_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_dsc_chunk_size_read,
+	.read_iter = dp_dsc_chunk_size_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_dsc_slice_bpg_offset_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_dsc_slice_bpg_offset_read,
+	.read_iter = dp_dsc_slice_bpg_offset_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations trigger_hotplug_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.write = trigger_hotplug,
+	.write_iter = trigger_hotplug_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_link_settings_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_link_settings_read,
-	.write = dp_link_settings_write,
+	.read_iter = dp_link_settings_read_iter,
+	.write_iter = dp_link_settings_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_phy_settings_debugfs_fop = {
 	.owner = THIS_MODULE,
-	.read = dp_phy_settings_read,
-	.write = dp_phy_settings_write,
+	.read_iter = dp_phy_settings_read_iter,
+	.write_iter = dp_phy_settings_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_phy_test_pattern_fops = {
 	.owner = THIS_MODULE,
-	.write = dp_phy_test_pattern_debugfs_write,
+	.write_iter = dp_phy_test_pattern_debugfs_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations sdp_message_fops = {
 	.owner = THIS_MODULE,
-	.write = dp_sdp_message_debugfs_write,
+	.write_iter = dp_sdp_message_debugfs_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_max_bpc_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.read = dp_max_bpc_read,
-	.write = dp_max_bpc_write,
+	.read_iter = dp_max_bpc_read_iter,
+	.write_iter = dp_max_bpc_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_dsc_disable_passthrough_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.write = dp_dsc_passthrough_set,
+	.write_iter = dp_dsc_passthrough_set_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations dp_mst_link_settings_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.write = dp_mst_link_setting,
+	.write_iter = dp_mst_link_setting_iter,
 	.llseek = default_llseek
 };
 
@@ -3415,6 +3436,7 @@ static ssize_t edp_ilr_write(struct file *f, const char __user *buf,
 	kfree(wr_buf);
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(edp_ilr_write);
 
 static int edp_ilr_open(struct inode *inode, struct file *file)
 {
@@ -3424,10 +3446,10 @@ static int edp_ilr_open(struct inode *inode, struct file *file)
 static const struct file_operations edp_ilr_debugfs_fops = {
 	.owner = THIS_MODULE,
 	.open = edp_ilr_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
-	.write = edp_ilr_write
+	.write_iter = edp_ilr_write_iter
 };
 
 void connector_debugfs_init(struct amdgpu_dm_connector *connector)
@@ -3695,18 +3717,15 @@ void crtc_debugfs_init(struct drm_crtc *crtc)
  * Writes DTN log state to the user supplied buffer.
  * Example usage: cat /sys/kernel/debug/dri/0/amdgpu_dm_dtn_log
  */
-static ssize_t dtn_log_read(
-	struct file *f,
-	char __user *buf,
-	size_t size,
-	loff_t *pos)
+static ssize_t dtn_log_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct amdgpu_device *adev = file_inode(f)->i_private;
+	struct amdgpu_device *adev = file_inode(iocb->ki_filp)->i_private;
 	struct dc *dc = adev->dm.dc;
 	struct dc_log_buffer_ctx log_ctx = { 0 };
+	size_t size = iov_iter_count(to);
 	ssize_t result = 0;
 
-	if (!buf || !size)
+	if (!size)
 		return -EINVAL;
 
 	if (!dc->hwss.log_hw_state)
@@ -3714,13 +3733,13 @@ static ssize_t dtn_log_read(
 
 	dc->hwss.log_hw_state(dc, &log_ctx);
 
-	if (*pos < log_ctx.pos) {
-		size_t to_copy = log_ctx.pos - *pos;
+	if (iocb->ki_pos < log_ctx.pos) {
+		size_t to_copy = log_ctx.pos - iocb->ki_pos;
 
 		to_copy = min(to_copy, size);
 
-		if (!copy_to_user(buf, log_ctx.buf + *pos, to_copy)) {
-			*pos += to_copy;
+		if (copy_to_iter_full(log_ctx.buf + iocb->ki_pos, to_copy, to)) {
+			iocb->ki_pos += to_copy;
 			result = to_copy;
 		}
 	}
@@ -3734,13 +3753,10 @@ static ssize_t dtn_log_read(
  * Writes DTN log state to dmesg when triggered via a write.
  * Example usage: echo 1 > /sys/kernel/debug/dri/0/amdgpu_dm_dtn_log
  */
-static ssize_t dtn_log_write(
-	struct file *f,
-	const char __user *buf,
-	size_t size,
-	loff_t *pos)
+static ssize_t dtn_log_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct amdgpu_device *adev = file_inode(f)->i_private;
+	struct amdgpu_device *adev = file_inode(iocb->ki_filp)->i_private;
+	size_t size = iov_iter_count(from);
 	struct dc *dc = adev->dm.dc;
 
 	/* Write triggers log output via dmesg. */
@@ -4121,18 +4137,19 @@ static ssize_t dcc_en_bits_read(
 	kfree(rd_buf);
 	return result;
 }
+FOPS_READ_ITER_HELPER(dcc_en_bits_read);
 
 void dtn_debugfs_init(struct amdgpu_device *adev)
 {
 	static const struct file_operations dtn_log_fops = {
 		.owner = THIS_MODULE,
-		.read = dtn_log_read,
-		.write = dtn_log_write,
+		.read_iter = dtn_log_read,
+		.write_iter = dtn_log_write,
 		.llseek = default_llseek
 	};
 	static const struct file_operations dcc_en_bits_fops = {
 		.owner = THIS_MODULE,
-		.read = dcc_en_bits_read,
+		.read_iter = dcc_en_bits_read_iter,
 		.llseek = default_llseek
 	};
 

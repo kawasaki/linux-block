@@ -50,23 +50,22 @@ struct FW_ATT_RECORD {
 	uint32_t AttFwTaId;              /* Ta ID (only in TA Attestation Table) */
 };
 
-static ssize_t amdgpu_fw_attestation_debugfs_read(struct file *f,
-						  char __user *buf,
-						  size_t size,
-						  loff_t *pos)
+static ssize_t amdgpu_fw_attestation_debugfs_read(struct kiocb *iocb,
+						  struct iov_iter *to)
 {
-	struct amdgpu_device *adev = (struct amdgpu_device *)file_inode(f)->i_private;
+	struct amdgpu_device *adev = file_inode(iocb->ki_filp)->i_private;
 	uint64_t records_addr = 0;
 	uint64_t vram_pos = 0;
 	struct FW_ATT_DB_HEADER fw_att_hdr = {0};
 	struct FW_ATT_RECORD fw_att_record = {0};
+	size_t size = iov_iter_count(to);
 
 	if (size < sizeof(struct FW_ATT_RECORD)) {
 		DRM_WARN("FW attestation input buffer not enough memory");
 		return -EINVAL;
 	}
 
-	if ((*pos + sizeof(struct FW_ATT_DB_HEADER)) >= FW_ATTESTATION_MAX_SIZE) {
+	if ((iocb->ki_pos + sizeof(struct FW_ATT_DB_HEADER)) >= FW_ATTESTATION_MAX_SIZE) {
 		DRM_WARN("FW attestation out of bounds");
 		return 0;
 	}
@@ -78,7 +77,7 @@ static ssize_t amdgpu_fw_attestation_debugfs_read(struct file *f,
 
 	vram_pos =  records_addr - adev->gmc.vram_start;
 
-	if (*pos == 0) {
+	if (iocb->ki_pos == 0) {
 		amdgpu_device_vram_access(adev,
 					  vram_pos,
 					  (uint32_t *)&fw_att_hdr,
@@ -94,7 +93,7 @@ static ssize_t amdgpu_fw_attestation_debugfs_read(struct file *f,
 	}
 
 	amdgpu_device_vram_access(adev,
-				  vram_pos + sizeof(struct FW_ATT_DB_HEADER) + *pos,
+				  vram_pos + sizeof(struct FW_ATT_DB_HEADER) + iocb->ki_pos,
 				  (uint32_t *)&fw_att_record,
 				  sizeof(struct FW_ATT_RECORD),
 				  false);
@@ -102,18 +101,16 @@ static ssize_t amdgpu_fw_attestation_debugfs_read(struct file *f,
 	if (fw_att_record.RecordValid != FW_ATTESTATION_RECORD_VALID)
 		return 0;
 
-	if (copy_to_user(buf, (void *)&fw_att_record, sizeof(struct FW_ATT_RECORD)))
+	if (!copy_to_iter_full((void *)&fw_att_record, sizeof(struct FW_ATT_RECORD), to))
 		return -EINVAL;
 
-	*pos += sizeof(struct FW_ATT_RECORD);
-
+	iocb->ki_pos += sizeof(struct FW_ATT_RECORD);
 	return sizeof(struct FW_ATT_RECORD);
 }
 
 static const struct file_operations amdgpu_fw_attestation_debugfs_ops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_fw_attestation_debugfs_read,
-	.write = NULL,
+	.read_iter = amdgpu_fw_attestation_debugfs_read,
 	.llseek = default_llseek
 };
 

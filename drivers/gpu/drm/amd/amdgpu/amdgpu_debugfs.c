@@ -194,6 +194,7 @@ static ssize_t amdgpu_debugfs_regs_read(struct file *f, char __user *buf,
 {
 	return amdgpu_debugfs_process_reg_op(true, f, buf, size, pos);
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_regs_read);
 
 /*
  * amdgpu_debugfs_regs_write - Callback for writing MMIO registers
@@ -203,6 +204,7 @@ static ssize_t amdgpu_debugfs_regs_write(struct file *f, const char __user *buf,
 {
 	return amdgpu_debugfs_process_reg_op(false, f, (char __user *)buf, size, pos);
 }
+FOPS_WRITE_ITER_HELPER(amdgpu_debugfs_regs_write);
 
 static int amdgpu_debugfs_regs2_open(struct inode *inode, struct file *file)
 {
@@ -365,11 +367,13 @@ static ssize_t amdgpu_debugfs_regs2_read(struct file *f, char __user *buf, size_
 {
 	return amdgpu_debugfs_regs2_op(f, buf, *pos, size, 0);
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_regs2_read);
 
 static ssize_t amdgpu_debugfs_regs2_write(struct file *f, const char __user *buf, size_t size, loff_t *pos)
 {
 	return amdgpu_debugfs_regs2_op(f, (char __user *)buf, *pos, size, 1);
 }
+FOPS_WRITE_ITER_HELPER(amdgpu_debugfs_regs2_write);
 
 static int amdgpu_debugfs_gprwave_open(struct inode *inode, struct file *file)
 {
@@ -475,6 +479,7 @@ done:
 	kfree(data);
 	return result;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_gprwave_read);
 
 static long amdgpu_debugfs_gprwave_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 {
@@ -562,6 +567,7 @@ out:
 	amdgpu_virt_disable_access_debugfs(adev);
 	return r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_regs_pcie_read);
 
 /**
  * amdgpu_debugfs_regs_pcie_write - Write to a PCIE register
@@ -622,6 +628,7 @@ out:
 	amdgpu_virt_disable_access_debugfs(adev);
 	return r;
 }
+FOPS_WRITE_ITER_HELPER(amdgpu_debugfs_regs_pcie_write);
 
 /**
  * amdgpu_debugfs_regs_didt_read - Read from a DIDT register
@@ -681,6 +688,7 @@ out:
 	amdgpu_virt_disable_access_debugfs(adev);
 	return r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_regs_didt_read);
 
 /**
  * amdgpu_debugfs_regs_didt_write - Write to a DIDT register
@@ -741,6 +749,7 @@ out:
 	amdgpu_virt_disable_access_debugfs(adev);
 	return r;
 }
+FOPS_WRITE_ITER_HELPER(amdgpu_debugfs_regs_didt_write);
 
 /**
  * amdgpu_debugfs_regs_smc_read - Read from a SMC register
@@ -800,6 +809,7 @@ out:
 	amdgpu_virt_disable_access_debugfs(adev);
 	return r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_regs_smc_read);
 
 /**
  * amdgpu_debugfs_regs_smc_write - Write to a SMC register
@@ -860,6 +870,7 @@ out:
 	amdgpu_virt_disable_access_debugfs(adev);
 	return r;
 }
+FOPS_WRITE_ITER_HELPER(amdgpu_debugfs_regs_smc_write);
 
 /**
  * amdgpu_debugfs_gca_config_read - Read from gfx config data
@@ -957,6 +968,7 @@ static ssize_t amdgpu_debugfs_gca_config_read(struct file *f, char __user *buf,
 	kfree(config);
 	return result;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_gca_config_read);
 
 /**
  * amdgpu_debugfs_sensor_read - Read from the powerplay sensors
@@ -1030,6 +1042,7 @@ static ssize_t amdgpu_debugfs_sensor_read(struct file *f, char __user *buf,
 	amdgpu_virt_disable_access_debugfs(adev);
 	return !r ? outsize : r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_sensor_read);
 
 /** amdgpu_debugfs_wave_read - Read WAVE STATUS data
  *
@@ -1121,6 +1134,7 @@ static ssize_t amdgpu_debugfs_wave_read(struct file *f, char __user *buf,
 	amdgpu_virt_disable_access_debugfs(adev);
 	return result;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_wave_read);
 
 /** amdgpu_debugfs_gpr_read - Read wave gprs
  *
@@ -1219,6 +1233,7 @@ err:
 	kfree(data);
 	return r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_gpr_read);
 
 /**
  * amdgpu_debugfs_gfxoff_residency_read - Read GFXOFF residency
@@ -1271,6 +1286,7 @@ out:
 
 	return r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_gfxoff_residency_read);
 
 /**
  * amdgpu_debugfs_gfxoff_residency_write - Log GFXOFF Residency
@@ -1320,7 +1336,7 @@ out:
 
 	return r;
 }
-
+FOPS_WRITE_ITER_HELPER(amdgpu_debugfs_gfxoff_residency_write);
 
 /**
  * amdgpu_debugfs_gfxoff_count_read - Read GFXOFF entry count
@@ -1370,6 +1386,7 @@ out:
 
 	return r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_gfxoff_count_read);
 
 /**
  * amdgpu_debugfs_gfxoff_write - Enable/disable GFXOFF
@@ -1419,7 +1436,7 @@ out:
 
 	return r;
 }
-
+FOPS_WRITE_ITER_HELPER(amdgpu_debugfs_gfxoff_write);
 
 /**
  * amdgpu_debugfs_gfxoff_read - read gfxoff status
@@ -1465,6 +1482,7 @@ out:
 
 	return r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_gfxoff_read);
 
 static ssize_t amdgpu_debugfs_gfxoff_status_read(struct file *f, char __user *buf,
 						 size_t size, loff_t *pos)
@@ -1506,12 +1524,13 @@ out:
 
 	return r;
 }
+FOPS_READ_ITER_HELPER(amdgpu_debugfs_gfxoff_status_read);
 
 static const struct file_operations amdgpu_debugfs_regs2_fops = {
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = amdgpu_debugfs_regs2_ioctl,
-	.read = amdgpu_debugfs_regs2_read,
-	.write = amdgpu_debugfs_regs2_write,
+	.read_iter = amdgpu_debugfs_regs2_read_iter,
+	.write_iter = amdgpu_debugfs_regs2_write_iter,
 	.open = amdgpu_debugfs_regs2_open,
 	.release = amdgpu_debugfs_regs2_release,
 	.llseek = default_llseek
@@ -1520,7 +1539,7 @@ static const struct file_operations amdgpu_debugfs_regs2_fops = {
 static const struct file_operations amdgpu_debugfs_gprwave_fops = {
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = amdgpu_debugfs_gprwave_ioctl,
-	.read = amdgpu_debugfs_gprwave_read,
+	.read_iter = amdgpu_debugfs_gprwave_read_iter,
 	.open = amdgpu_debugfs_gprwave_open,
 	.release = amdgpu_debugfs_gprwave_release,
 	.llseek = default_llseek
@@ -1528,75 +1547,75 @@ static const struct file_operations amdgpu_debugfs_gprwave_fops = {
 
 static const struct file_operations amdgpu_debugfs_regs_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_regs_read,
-	.write = amdgpu_debugfs_regs_write,
+	.read_iter = amdgpu_debugfs_regs_read_iter,
+	.write_iter = amdgpu_debugfs_regs_write_iter,
 	.llseek = default_llseek
 };
 static const struct file_operations amdgpu_debugfs_regs_didt_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_regs_didt_read,
-	.write = amdgpu_debugfs_regs_didt_write,
+	.read_iter = amdgpu_debugfs_regs_didt_read_iter,
+	.write_iter = amdgpu_debugfs_regs_didt_write_iter,
 	.llseek = default_llseek
 };
 static const struct file_operations amdgpu_debugfs_regs_pcie_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_regs_pcie_read,
-	.write = amdgpu_debugfs_regs_pcie_write,
+	.read_iter = amdgpu_debugfs_regs_pcie_read_iter,
+	.write_iter = amdgpu_debugfs_regs_pcie_write_iter,
 	.llseek = default_llseek
 };
 static const struct file_operations amdgpu_debugfs_regs_smc_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_regs_smc_read,
-	.write = amdgpu_debugfs_regs_smc_write,
+	.read_iter = amdgpu_debugfs_regs_smc_read_iter,
+	.write_iter = amdgpu_debugfs_regs_smc_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations amdgpu_debugfs_gca_config_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_gca_config_read,
+	.read_iter = amdgpu_debugfs_gca_config_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations amdgpu_debugfs_sensors_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_sensor_read,
+	.read_iter = amdgpu_debugfs_sensor_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations amdgpu_debugfs_wave_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_wave_read,
+	.read_iter = amdgpu_debugfs_wave_read_iter,
 	.llseek = default_llseek
 };
 static const struct file_operations amdgpu_debugfs_gpr_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_gpr_read,
+	.read_iter = amdgpu_debugfs_gpr_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations amdgpu_debugfs_gfxoff_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_gfxoff_read,
-	.write = amdgpu_debugfs_gfxoff_write,
+	.read_iter = amdgpu_debugfs_gfxoff_read_iter,
+	.write_iter = amdgpu_debugfs_gfxoff_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations amdgpu_debugfs_gfxoff_status_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_gfxoff_status_read,
+	.read_iter = amdgpu_debugfs_gfxoff_status_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations amdgpu_debugfs_gfxoff_count_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_gfxoff_count_read,
+	.read_iter = amdgpu_debugfs_gfxoff_count_read_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations amdgpu_debugfs_gfxoff_residency_fops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_debugfs_gfxoff_residency_read,
-	.write = amdgpu_debugfs_gfxoff_residency_write,
+	.read_iter = amdgpu_debugfs_gfxoff_residency_read_iter,
+	.write_iter = amdgpu_debugfs_gfxoff_residency_write_iter,
 	.llseek = default_llseek
 };
 

@@ -3733,20 +3733,13 @@ out:
 	return r;
 }
 
-static ssize_t smu_stb_debugfs_read(struct file *filp, char __user *buf, size_t size,
-				loff_t *pos)
+static ssize_t smu_stb_debugfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct amdgpu_device *adev = filp->f_inode->i_private;
+	struct amdgpu_device *adev = iocb->ki_filp->f_inode->i_private;
 	struct smu_context *smu = adev->powerplay.pp_handle;
 
-
-	if (!filp->private_data)
-		return -EINVAL;
-
-	return simple_read_from_buffer(buf,
-				       size,
-				       pos, filp->private_data,
-				       smu->stb_context.stb_buf_size);
+	return simple_copy_to_iter(adev, &iocb->ki_pos,
+				       smu->stb_context.stb_buf_size, to);
 }
 
 static int smu_stb_debugfs_release(struct inode *inode, struct file *filp)
@@ -3767,7 +3760,7 @@ static int smu_stb_debugfs_release(struct inode *inode, struct file *filp)
 static const struct file_operations smu_stb_debugfs_fops = {
 	.owner = THIS_MODULE,
 	.open = smu_stb_debugfs_open,
-	.read = smu_stb_debugfs_read,
+	.read_iter = smu_stb_debugfs_read,
 	.release = smu_stb_debugfs_release,
 	.llseek = default_llseek,
 };

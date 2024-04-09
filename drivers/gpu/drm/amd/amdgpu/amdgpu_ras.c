@@ -205,13 +205,13 @@ static int amdgpu_reserve_page_direct(struct amdgpu_device *adev, uint64_t addre
 	return 0;
 }
 
-static ssize_t amdgpu_ras_debugfs_read(struct file *f, char __user *buf,
-					size_t size, loff_t *pos)
+static ssize_t amdgpu_ras_debugfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ras_manager *obj = (struct ras_manager *)file_inode(f)->i_private;
+	struct ras_manager *obj = file_inode(iocb->ki_filp)->i_private;
 	struct ras_query_if info = {
 		.head = obj->head,
 	};
+	size_t size = iov_iter_count(to);
 	ssize_t s;
 	char val[128];
 
@@ -228,25 +228,23 @@ static ssize_t amdgpu_ras_debugfs_read(struct file *f, char __user *buf,
 	s = snprintf(val, sizeof(val), "%s: %lu\n%s: %lu\n",
 			"ue", info.ue_count,
 			"ce", info.ce_count);
-	if (*pos >= s)
+	if (iocb->ki_pos >= s)
 		return 0;
 
-	s -= *pos;
+	s -= iocb->ki_pos;
 	s = min_t(u64, s, size);
 
 
-	if (copy_to_user(buf, &val[*pos], s))
+	if (!copy_to_iter_full(&val[iocb->ki_pos], s, to))
 		return -EINVAL;
 
-	*pos += s;
-
+	iocb->ki_pos += s;
 	return s;
 }
 
 static const struct file_operations amdgpu_ras_debugfs_ops = {
 	.owner = THIS_MODULE,
-	.read = amdgpu_ras_debugfs_read,
-	.write = NULL,
+	.read_iter = amdgpu_ras_debugfs_read,
 	.llseek = default_llseek
 };
 
@@ -545,6 +543,7 @@ static ssize_t amdgpu_ras_debugfs_ctrl_write(struct file *f,
 
 	return size;
 }
+FOPS_WRITE_ITER_HELPER(amdgpu_ras_debugfs_ctrl_write);
 
 /**
  * DOC: AMDGPU RAS debugfs EEPROM table reset interface
@@ -562,12 +561,11 @@ static ssize_t amdgpu_ras_debugfs_ctrl_write(struct file *f,
  * will reset EEPROM table to 0 entries.
  *
  */
-static ssize_t amdgpu_ras_debugfs_eeprom_write(struct file *f,
-					       const char __user *buf,
-					       size_t size, loff_t *pos)
+static ssize_t amdgpu_ras_debugfs_eeprom_write(struct kiocb *iocb,
+					       struct iov_iter *from)
 {
-	struct amdgpu_device *adev =
-		(struct amdgpu_device *)file_inode(f)->i_private;
+	struct amdgpu_device *adev = file_inode(iocb->ki_filp)->i_private;
+	size_t size = iov_iter_count(from);
 	int ret;
 
 	ret = amdgpu_ras_eeprom_reset_table(
@@ -585,15 +583,13 @@ static ssize_t amdgpu_ras_debugfs_eeprom_write(struct file *f,
 
 static const struct file_operations amdgpu_ras_debugfs_ctrl_ops = {
 	.owner = THIS_MODULE,
-	.read = NULL,
-	.write = amdgpu_ras_debugfs_ctrl_write,
+	.write_iter = amdgpu_ras_debugfs_ctrl_write_iter,
 	.llseek = default_llseek
 };
 
 static const struct file_operations amdgpu_ras_debugfs_eeprom_ops = {
 	.owner = THIS_MODULE,
-	.read = NULL,
-	.write = amdgpu_ras_debugfs_eeprom_write,
+	.write_iter = amdgpu_ras_debugfs_eeprom_write,
 	.llseek = default_llseek
 };
 
