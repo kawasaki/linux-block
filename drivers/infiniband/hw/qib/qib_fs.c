@@ -100,12 +100,11 @@ static int create_file(const char *name, umode_t mode,
 	return error;
 }
 
-static ssize_t driver_stats_read(struct file *file, char __user *buf,
-				 size_t count, loff_t *ppos)
+static ssize_t driver_stats_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	qib_stats.sps_ints = qib_sps_ints();
-	return simple_read_from_buffer(buf, count, ppos, &qib_stats,
-				       sizeof(qib_stats));
+	return simple_copy_to_iter(&qib_stats, &iocb->ki_pos, sizeof(qib_stats),
+					to);
 }
 
 /*
@@ -128,45 +127,42 @@ static const char qib_statnames[] =
 	"EgrHdrFull\n"
 	;
 
-static ssize_t driver_names_read(struct file *file, char __user *buf,
-				 size_t count, loff_t *ppos)
+static ssize_t driver_names_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	return simple_read_from_buffer(buf, count, ppos, qib_statnames,
-		sizeof(qib_statnames) - 1); /* no null */
+	return simple_copy_to_iter(qib_statnames, &iocb->ki_pos,
+		sizeof(qib_statnames) - 1, to); /* no null */
 }
 
 static const struct file_operations driver_ops[] = {
-	{ .read = driver_stats_read, .llseek = generic_file_llseek, },
-	{ .read = driver_names_read, .llseek = generic_file_llseek, },
+	{ .read_iter = driver_stats_read, .llseek = generic_file_llseek, },
+	{ .read_iter = driver_names_read, .llseek = generic_file_llseek, },
 };
 
 /* read the per-device counters */
-static ssize_t dev_counters_read(struct file *file, char __user *buf,
-				 size_t count, loff_t *ppos)
+static ssize_t dev_counters_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	u64 *counters;
 	size_t avail;
-	struct qib_devdata *dd = private2dd(file);
+	struct qib_devdata *dd = private2dd(iocb->ki_filp);
 
-	avail = dd->f_read_cntrs(dd, *ppos, NULL, &counters);
-	return simple_read_from_buffer(buf, count, ppos, counters, avail);
+	avail = dd->f_read_cntrs(dd, iocb->ki_pos, NULL, &counters);
+	return simple_copy_to_iter(counters, &iocb->ki_pos, avail, to);
 }
 
 /* read the per-device counters */
-static ssize_t dev_names_read(struct file *file, char __user *buf,
-			      size_t count, loff_t *ppos)
+static ssize_t dev_names_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	char *names;
 	size_t avail;
-	struct qib_devdata *dd = private2dd(file);
+	struct qib_devdata *dd = private2dd(iocb->ki_filp);
 
-	avail = dd->f_read_cntrs(dd, *ppos, &names, NULL);
-	return simple_read_from_buffer(buf, count, ppos, names, avail);
+	avail = dd->f_read_cntrs(dd, iocb->ki_pos, &names, NULL);
+	return simple_copy_to_iter(names, &iocb->ki_pos, avail, to);
 }
 
 static const struct file_operations cntr_ops[] = {
-	{ .read = dev_counters_read, .llseek = generic_file_llseek, },
-	{ .read = dev_names_read, .llseek = generic_file_llseek, },
+	{ .read_iter = dev_counters_read, .llseek = generic_file_llseek, },
+	{ .read_iter = dev_names_read, .llseek = generic_file_llseek, },
 };
 
 /*
@@ -175,54 +171,50 @@ static const struct file_operations cntr_ops[] = {
  */
 
 /* read the per-port names (same for each port) */
-static ssize_t portnames_read(struct file *file, char __user *buf,
-			      size_t count, loff_t *ppos)
+static ssize_t portnames_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	char *names;
 	size_t avail;
-	struct qib_devdata *dd = private2dd(file);
+	struct qib_devdata *dd = private2dd(iocb->ki_filp);
 
-	avail = dd->f_read_portcntrs(dd, *ppos, 0, &names, NULL);
-	return simple_read_from_buffer(buf, count, ppos, names, avail);
+	avail = dd->f_read_portcntrs(dd, iocb->ki_pos, 0, &names, NULL);
+	return simple_copy_to_iter(names, &iocb->ki_pos, avail, to);
 }
 
 /* read the per-port counters for port 1 (pidx 0) */
-static ssize_t portcntrs_1_read(struct file *file, char __user *buf,
-				size_t count, loff_t *ppos)
+static ssize_t portcntrs_1_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	u64 *counters;
 	size_t avail;
-	struct qib_devdata *dd = private2dd(file);
+	struct qib_devdata *dd = private2dd(iocb->ki_filp);
 
-	avail = dd->f_read_portcntrs(dd, *ppos, 0, NULL, &counters);
-	return simple_read_from_buffer(buf, count, ppos, counters, avail);
+	avail = dd->f_read_portcntrs(dd, iocb->ki_pos, 0, NULL, &counters);
+	return simple_copy_to_iter(counters, &iocb->ki_pos, avail, to);
 }
 
 /* read the per-port counters for port 2 (pidx 1) */
-static ssize_t portcntrs_2_read(struct file *file, char __user *buf,
-				size_t count, loff_t *ppos)
+static ssize_t portcntrs_2_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	u64 *counters;
 	size_t avail;
-	struct qib_devdata *dd = private2dd(file);
+	struct qib_devdata *dd = private2dd(iocb->ki_filp);
 
-	avail = dd->f_read_portcntrs(dd, *ppos, 1, NULL, &counters);
-	return simple_read_from_buffer(buf, count, ppos, counters, avail);
+	avail = dd->f_read_portcntrs(dd, iocb->ki_pos, 1, NULL, &counters);
+	return simple_copy_to_iter(counters, &iocb->ki_pos, avail, to);
 }
 
 static const struct file_operations portcntr_ops[] = {
-	{ .read = portnames_read, .llseek = generic_file_llseek, },
-	{ .read = portcntrs_1_read, .llseek = generic_file_llseek, },
-	{ .read = portcntrs_2_read, .llseek = generic_file_llseek, },
+	{ .read_iter = portnames_read, .llseek = generic_file_llseek, },
+	{ .read_iter = portcntrs_1_read, .llseek = generic_file_llseek, },
+	{ .read_iter = portcntrs_2_read, .llseek = generic_file_llseek, },
 };
 
 /*
  * read the per-port QSFP data for port 1 (pidx 0)
  */
-static ssize_t qsfp_1_read(struct file *file, char __user *buf,
-			   size_t count, loff_t *ppos)
+static ssize_t qsfp_1_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct qib_devdata *dd = private2dd(file);
+	struct qib_devdata *dd = private2dd(iocb->ki_filp);
 	char *tmp;
 	int ret;
 
@@ -232,7 +224,7 @@ static ssize_t qsfp_1_read(struct file *file, char __user *buf,
 
 	ret = qib_qsfp_dump(dd->pport, tmp, PAGE_SIZE);
 	if (ret > 0)
-		ret = simple_read_from_buffer(buf, count, ppos, tmp, ret);
+		ret = simple_copy_to_iter(tmp, &iocb->ki_pos, ret, to);
 	kfree(tmp);
 	return ret;
 }
@@ -240,10 +232,9 @@ static ssize_t qsfp_1_read(struct file *file, char __user *buf,
 /*
  * read the per-port QSFP data for port 2 (pidx 1)
  */
-static ssize_t qsfp_2_read(struct file *file, char __user *buf,
-			   size_t count, loff_t *ppos)
+static ssize_t qsfp_2_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct qib_devdata *dd = private2dd(file);
+	struct qib_devdata *dd = private2dd(iocb->ki_filp);
 	char *tmp;
 	int ret;
 
@@ -256,25 +247,25 @@ static ssize_t qsfp_2_read(struct file *file, char __user *buf,
 
 	ret = qib_qsfp_dump(dd->pport + 1, tmp, PAGE_SIZE);
 	if (ret > 0)
-		ret = simple_read_from_buffer(buf, count, ppos, tmp, ret);
+		ret = simple_copy_to_iter(tmp, &iocb->ki_pos, ret, to);
 	kfree(tmp);
 	return ret;
 }
 
 static const struct file_operations qsfp_ops[] = {
-	{ .read = qsfp_1_read, .llseek = generic_file_llseek, },
-	{ .read = qsfp_2_read, .llseek = generic_file_llseek, },
+	{ .read_iter = qsfp_1_read, .llseek = generic_file_llseek, },
+	{ .read_iter = qsfp_2_read, .llseek = generic_file_llseek, },
 };
 
-static ssize_t flash_read(struct file *file, char __user *buf,
-			  size_t count, loff_t *ppos)
+static ssize_t flash_read(struct kiocb *iocb, struct iov_iter *to)
 {
+	size_t count = iov_iter_count(to);
 	struct qib_devdata *dd;
 	ssize_t ret;
 	loff_t pos;
 	char *tmp;
 
-	pos = *ppos;
+	pos = iocb->ki_pos;
 
 	if (pos < 0) {
 		ret = -EINVAL;
@@ -295,19 +286,19 @@ static ssize_t flash_read(struct file *file, char __user *buf,
 		goto bail;
 	}
 
-	dd = private2dd(file);
+	dd = private2dd(iocb->ki_filp);
 	if (qib_eeprom_read(dd, pos, tmp, count)) {
 		qib_dev_err(dd, "failed to read from flash\n");
 		ret = -ENXIO;
 		goto bail_tmp;
 	}
 
-	if (copy_to_user(buf, tmp, count)) {
+	if (!copy_to_iter_full(tmp, count, to)) {
 		ret = -EFAULT;
 		goto bail_tmp;
 	}
 
-	*ppos = pos + count;
+	iocb->ki_pos = pos + count;
 	ret = count;
 
 bail_tmp:
@@ -317,31 +308,31 @@ bail:
 	return ret;
 }
 
-static ssize_t flash_write(struct file *file, const char __user *buf,
-			   size_t count, loff_t *ppos)
+static ssize_t flash_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	size_t count = iov_iter_count(from);
 	struct qib_devdata *dd;
 	ssize_t ret;
 	loff_t pos;
 	char *tmp;
 
-	pos = *ppos;
+	pos = iocb->ki_pos;
 
 	if (pos != 0 || count != sizeof(struct qib_flash))
 		return -EINVAL;
 
-	tmp = memdup_user(buf, count);
+	tmp = iterdup(from, count);
 	if (IS_ERR(tmp))
 		return PTR_ERR(tmp);
 
-	dd = private2dd(file);
+	dd = private2dd(iocb->ki_filp);
 	if (qib_eeprom_write(dd, pos, tmp, count)) {
 		ret = -ENXIO;
 		qib_dev_err(dd, "failed to write to flash\n");
 		goto bail_tmp;
 	}
 
-	*ppos = pos + count;
+	iocb->ki_pos = pos + count;
 	ret = count;
 
 bail_tmp:
@@ -350,8 +341,8 @@ bail_tmp:
 }
 
 static const struct file_operations flash_ops = {
-	.read = flash_read,
-	.write = flash_write,
+	.read_iter = flash_read,
+	.write_iter = flash_write,
 	.llseek = default_llseek,
 };
 

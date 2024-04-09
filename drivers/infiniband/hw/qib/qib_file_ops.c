@@ -68,7 +68,6 @@ static int qib_mmapf(struct file *, struct vm_area_struct *);
  */
 static const struct file_operations qib_file_ops = {
 	.owner = THIS_MODULE,
-	.write = qib_write,
 	.write_iter = qib_write_iter,
 	.open = qib_open,
 	.release = qib_close,
@@ -2243,6 +2242,9 @@ static ssize_t qib_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	struct qib_filedata *fp = iocb->ki_filp->private_data;
 	struct qib_ctxtdata *rcd = ctxt_fp(iocb->ki_filp);
 	struct qib_user_sdma_queue *pq = fp->pq;
+
+	if (!(iocb->ki_flags & IOCB_VECTORED))
+		vfs_write_iter(iocb, from, qib_write);
 
 	if (!user_backed_iter(from) || !from->nr_segs || !pq)
 		return -EINVAL;
