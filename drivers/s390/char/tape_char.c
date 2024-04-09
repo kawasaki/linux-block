@@ -32,8 +32,8 @@
 /*
  * file operation structure for tape character frontend
  */
-static ssize_t tapechar_read(struct file *, char __user *, size_t, loff_t *);
-static ssize_t tapechar_write(struct file *, const char __user *, size_t, loff_t *);
+static ssize_t tapechar_read_iter(struct kiocb *iocb, struct iov_iter *to);
+static ssize_t tapechar_write_iter(struct kiocb *iocb, struct iov_iter *from);
 static int tapechar_open(struct inode *,struct file *);
 static int tapechar_release(struct inode *,struct file *);
 static long tapechar_ioctl(struct file *, unsigned int, unsigned long);
@@ -44,8 +44,8 @@ static long tapechar_compat_ioctl(struct file *, unsigned int, unsigned long);
 static const struct file_operations tape_fops =
 {
 	.owner = THIS_MODULE,
-	.read = tapechar_read,
-	.write = tapechar_write,
+	.read_iter = tapechar_read_iter,
+	.write_iter = tapechar_write_iter,
 	.unlocked_ioctl = tapechar_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = tapechar_compat_ioctl,
@@ -178,6 +178,7 @@ tapechar_read(struct file *filp, char __user *data, size_t count, loff_t *ppos)
 	tape_free_request(request);
 	return rc;
 }
+FOPS_READ_ITER_HELPER(tapechar_read);
 
 /*
  * Tape device write function
@@ -262,6 +263,7 @@ tapechar_write(struct file *filp, const char __user *data, size_t count, loff_t 
 
 	return rc ? rc : written;
 }
+FOPS_WRITE_ITER_HELPER(tapechar_write);
 
 /*
  * Character frontend tape device open function.
