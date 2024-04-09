@@ -411,25 +411,14 @@ static long mwave_ioctl(struct file *file, unsigned int iocmd,
 }
 
 
-static ssize_t mwave_read(struct file *file, char __user *buf, size_t count,
-                          loff_t * ppos)
+static ssize_t mwave_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	PRINTK_5(TRACE_MWAVE,
-		"mwavedd::mwave_read entry file %p, buf %p, count %zx ppos %p\n",
-		file, buf, count, ppos);
-
 	return -EINVAL;
 }
 
 
-static ssize_t mwave_write(struct file *file, const char __user *buf,
-                           size_t count, loff_t * ppos)
+static ssize_t mwave_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	PRINTK_5(TRACE_MWAVE,
-		"mwavedd::mwave_write entry file %p, buf %p,"
-		" count %zx ppos %p\n",
-		file, buf, count, ppos);
-
 	return -EINVAL;
 }
 
@@ -481,8 +470,8 @@ static int register_serial_portandirq(unsigned int port, int irq)
 
 static const struct file_operations mwave_fops = {
 	.owner		= THIS_MODULE,
-	.read		= mwave_read,
-	.write		= mwave_write,
+	.read_iter	= mwave_read,
+	.write_iter	= mwave_write,
 	.unlocked_ioctl	= mwave_ioctl,
 	.open		= mwave_open,
 	.release	= mwave_close,
