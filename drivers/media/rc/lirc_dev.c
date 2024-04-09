@@ -213,10 +213,10 @@ static int lirc_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t lirc_transmit(struct file *file, const char __user *buf,
-			     size_t n, loff_t *ppos)
+static ssize_t lirc_transmit(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct lirc_fh *fh = file->private_data;
+	struct lirc_fh *fh = iocb->ki_filp->private_data;
+	size_t n = iov_iter_count(from);
 	struct rc_dev *dev = fh->rc;
 	unsigned int *txbuf;
 	struct ir_raw_event *raw = NULL;
@@ -249,7 +249,7 @@ static ssize_t lirc_transmit(struct file *file, const char __user *buf,
 			goto out_unlock;
 		}
 
-		if (copy_from_user(&scan, buf, sizeof(scan))) {
+		if (!copy_from_iter_full(&scan, sizeof(scan), from)) {
 			ret = -EFAULT;
 			goto out_unlock;
 		}
@@ -311,7 +311,7 @@ static ssize_t lirc_transmit(struct file *file, const char __user *buf,
 			goto out_unlock;
 		}
 
-		txbuf = memdup_user(buf, n);
+		txbuf = iterdup(from, n);
 		if (IS_ERR(txbuf)) {
 			ret = PTR_ERR(txbuf);
 			goto out_unlock;
@@ -696,13 +696,14 @@ static ssize_t lirc_read(struct file *file, char __user *buffer, size_t length,
 	else /* LIRC_MODE_SCANCODE */
 		return lirc_read_scancode(file, buffer, length);
 }
+FOPS_READ_ITER_HELPER(lirc_read);
 
 static const struct file_operations lirc_fops = {
 	.owner		= THIS_MODULE,
-	.write		= lirc_transmit,
+	.write_iter	= lirc_transmit,
 	.unlocked_ioctl	= lirc_ioctl,
 	.compat_ioctl	= compat_ptr_ioctl,
-	.read		= lirc_read,
+	.read_iter	= lirc_read_iter,
 	.poll		= lirc_poll,
 	.open		= lirc_open,
 	.release	= lirc_close,
