@@ -509,9 +509,9 @@ static int prng_open(struct inode *inode, struct file *file)
 }
 
 
-static ssize_t prng_tdes_read(struct file *file, char __user *ubuf,
-			      size_t nbytes, loff_t *ppos)
+static ssize_t prng_tdes_read(struct kiocb *iocb, struct iov_iter *to)
 {
+	size_t nbytes = iov_iter_count(to);
 	int chunk, n, ret = 0;
 
 	/* lock prng_data struct */
@@ -570,14 +570,13 @@ static ssize_t prng_tdes_read(struct file *file, char __user *ubuf,
 		prng_data->prngws.byte_counter += n;
 		prng_data->prngws.reseed_counter += n;
 
-		if (copy_to_user(ubuf, prng_data->buf, chunk)) {
+		if (!copy_to_iter_full(prng_data->buf, chunk, to)) {
 			ret = -EFAULT;
 			break;
 		}
 
 		nbytes -= chunk;
 		ret += chunk;
-		ubuf += chunk;
 	}
 
 	/* unlock prng_data struct */
@@ -587,9 +586,9 @@ static ssize_t prng_tdes_read(struct file *file, char __user *ubuf,
 }
 
 
-static ssize_t prng_sha512_read(struct file *file, char __user *ubuf,
-				size_t nbytes, loff_t *ppos)
+static ssize_t prng_sha512_read(struct kiocb *iocb, struct iov_iter *to)
 {
+	size_t nbytes = iov_iter_count(to);
 	int n, ret = 0;
 	u8 *p;
 
@@ -640,12 +639,11 @@ static ssize_t prng_sha512_read(struct file *file, char __user *ubuf,
 				prng_data->rest = 0;
 			}
 		}
-		if (copy_to_user(ubuf, p, n)) {
+		if (!copy_to_iter_full(p, n, to)) {
 			ret = -EFAULT;
 			break;
 		}
 		memzero_explicit(p, n);
-		ubuf += n;
 		nbytes -= n;
 		ret += n;
 	}
@@ -663,14 +661,14 @@ static const struct file_operations prng_sha512_fops = {
 	.owner		= THIS_MODULE,
 	.open		= &prng_open,
 	.release	= NULL,
-	.read		= &prng_sha512_read,
+	.read_iter	= &prng_sha512_read,
 	.llseek		= noop_llseek,
 };
 static const struct file_operations prng_tdes_fops = {
 	.owner		= THIS_MODULE,
 	.open		= &prng_open,
 	.release	= NULL,
-	.read		= &prng_tdes_read,
+	.read_iter	= &prng_tdes_read,
 	.llseek		= noop_llseek,
 };
 

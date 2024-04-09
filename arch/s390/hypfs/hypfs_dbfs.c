@@ -28,17 +28,16 @@ static void hypfs_dbfs_data_free(struct hypfs_dbfs_data *data)
 	kfree(data);
 }
 
-static ssize_t dbfs_read(struct file *file, char __user *buf,
-			 size_t size, loff_t *ppos)
+static ssize_t dbfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct hypfs_dbfs_data *data;
 	struct hypfs_dbfs_file *df;
 	ssize_t rc;
 
-	if (*ppos != 0)
+	if (iocb->ki_pos != 0)
 		return 0;
 
-	df = file_inode(file)->i_private;
+	df = file_inode(iocb->ki_filp)->i_private;
 	if (mutex_lock_interruptible(&df->lock))
 		return -ERESTARTSYS;
 
@@ -55,7 +54,7 @@ static ssize_t dbfs_read(struct file *file, char __user *buf,
 	}
 	mutex_unlock(&df->lock);
 
-	rc = simple_read_from_buffer(buf, size, ppos, data->buf, data->size);
+	rc = simple_copy_to_iter(data->buf, &iocb->ki_pos, data->size, to);
 	hypfs_dbfs_data_free(data);
 	return rc;
 }
@@ -75,7 +74,7 @@ static long dbfs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 }
 
 static const struct file_operations dbfs_ops = {
-	.read		= dbfs_read,
+	.read_iter	= dbfs_read,
 	.unlocked_ioctl = dbfs_ioctl,
 };
 
