@@ -109,10 +109,13 @@ static ssize_t ac_write (struct file *, const char __user *, size_t, loff_t *);
 static long ac_ioctl(struct file *, unsigned int, unsigned long);
 static irqreturn_t ac_interrupt(int, void *);
 
+FOPS_READ_ITER_HELPER(ac_read);
+FOPS_WRITE_ITER_HELPER(ac_write);
+
 static const struct file_operations ac_fops = {
 	.owner = THIS_MODULE,
-	.read = ac_read,
-	.write = ac_write,
+	.read_iter = ac_read_iter,
+	.write_iter = ac_write_iter,
 	.unlocked_ioctl = ac_ioctl,
 };
 
