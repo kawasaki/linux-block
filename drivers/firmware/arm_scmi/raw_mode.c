@@ -765,46 +765,41 @@ static int scmi_raw_message_receive(struct scmi_raw_mode_info *raw,
 
 /* SCMI Raw debugfs helpers */
 
-static ssize_t scmi_dbg_raw_mode_common_read(struct file *filp,
-					     char __user *buf,
-					     size_t count, loff_t *ppos,
+static ssize_t scmi_dbg_raw_mode_common_read(struct kiocb *iocb,
+					     struct iov_iter *to,
 					     unsigned int idx)
 {
-	ssize_t cnt;
-	struct scmi_dbg_raw_data *rd = filp->private_data;
+	struct scmi_dbg_raw_data *rd = iocb->ki_filp->private_data;
 
 	if (!rd->rx_size) {
 		int ret;
 
 		ret = scmi_raw_message_receive(rd->raw, rd->rx.buf, rd->rx.len,
 					       &rd->rx_size, idx, rd->chan_id,
-					       filp->f_flags & O_NONBLOCK);
+					       iocb->ki_filp->f_flags & O_NONBLOCK);
 		if (ret) {
 			rd->rx_size = 0;
 			return ret;
 		}
 
 		/* Reset any previous filepos change, including writes */
-		*ppos = 0;
-	} else if (*ppos == rd->rx_size) {
+		iocb->ki_pos = 0;
+	} else if (iocb->ki_pos == rd->rx_size) {
 		/* Return EOF once all the message has been read-out */
 		rd->rx_size = 0;
 		return 0;
 	}
 
-	cnt = simple_read_from_buffer(buf, count, ppos,
-				      rd->rx.buf, rd->rx_size);
-
-	return cnt;
+	return simple_copy_to_iter(rd->rx.buf, &iocb->ki_pos, rd->rx_size, to);
 }
 
-static ssize_t scmi_dbg_raw_mode_common_write(struct file *filp,
-					      const char __user *buf,
-					      size_t count, loff_t *ppos,
+static ssize_t scmi_dbg_raw_mode_common_write(struct kiocb *iocb,
+					      struct iov_iter *from,
 					      bool async)
 {
 	int ret;
-	struct scmi_dbg_raw_data *rd = filp->private_data;
+	struct scmi_dbg_raw_data *rd = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 
 	if (count > rd->tx.len - rd->tx_size)
 		return -ENOSPC;
@@ -820,8 +815,8 @@ static ssize_t scmi_dbg_raw_mode_common_write(struct file *filp,
 	if (rd->tx_size < rd->tx_req_size) {
 		ssize_t cnt;
 
-		cnt = simple_write_to_buffer(rd->tx.buf, rd->tx.len, ppos,
-					     buf, count);
+		cnt = simple_copy_from_iter(rd->tx.buf, &iocb->ki_pos,
+					     rd->tx.len, from);
 		if (cnt < 0)
 			return cnt;
 
@@ -835,7 +830,7 @@ static ssize_t scmi_dbg_raw_mode_common_write(struct file *filp,
 
 	/* Reset ppos for next message ... */
 	rd->tx_size = 0;
-	*ppos = 0;
+	iocb->ki_pos = 0;
 
 	return ret ?: count;
 }
@@ -863,19 +858,16 @@ static __poll_t scmi_test_dbg_raw_common_poll(struct file *filp,
 	return mask;
 }
 
-static ssize_t scmi_dbg_raw_mode_message_read(struct file *filp,
-					      char __user *buf,
-					      size_t count, loff_t *ppos)
+static ssize_t scmi_dbg_raw_mode_message_read(struct kiocb *iocb,
+					      struct iov_iter *to)
 {
-	return scmi_dbg_raw_mode_common_read(filp, buf, count, ppos,
-					     SCMI_RAW_REPLY_QUEUE);
+	return scmi_dbg_raw_mode_common_read(iocb, to, SCMI_RAW_REPLY_QUEUE);
 }
 
-static ssize_t scmi_dbg_raw_mode_message_write(struct file *filp,
-					       const char __user *buf,
-					       size_t count, loff_t *ppos)
+static ssize_t scmi_dbg_raw_mode_message_write(struct kiocb *iocb,
+					       struct iov_iter *from)
 {
-	return scmi_dbg_raw_mode_common_write(filp, buf, count, ppos, false);
+	return scmi_dbg_raw_mode_common_write(iocb, from, false);
 }
 
 static __poll_t scmi_dbg_raw_mode_message_poll(struct file *filp,
@@ -935,55 +927,51 @@ static int scmi_dbg_raw_mode_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static ssize_t scmi_dbg_raw_mode_reset_write(struct file *filp,
-					     const char __user *buf,
-					     size_t count, loff_t *ppos)
+static ssize_t scmi_dbg_raw_mode_reset_write(struct kiocb *iocb,
+					     struct iov_iter *from)
 {
-	struct scmi_dbg_raw_data *rd = filp->private_data;
+	struct scmi_dbg_raw_data *rd = iocb->ki_filp->private_data;
 
 	scmi_xfer_raw_reset(rd->raw);
 
-	return count;
+	return iov_iter_count(from);
 }
 
 static const struct file_operations scmi_dbg_raw_mode_reset_fops = {
 	.open = scmi_dbg_raw_mode_open,
 	.release = scmi_dbg_raw_mode_release,
-	.write = scmi_dbg_raw_mode_reset_write,
+	.write_iter = scmi_dbg_raw_mode_reset_write,
 	.owner = THIS_MODULE,
 };
 
 static const struct file_operations scmi_dbg_raw_mode_message_fops = {
 	.open = scmi_dbg_raw_mode_open,
 	.release = scmi_dbg_raw_mode_release,
-	.read = scmi_dbg_raw_mode_message_read,
-	.write = scmi_dbg_raw_mode_message_write,
+	.read_iter = scmi_dbg_raw_mode_message_read,
+	.write_iter = scmi_dbg_raw_mode_message_write,
 	.poll = scmi_dbg_raw_mode_message_poll,
 	.owner = THIS_MODULE,
 };
 
-static ssize_t scmi_dbg_raw_mode_message_async_write(struct file *filp,
-						     const char __user *buf,
-						     size_t count, loff_t *ppos)
+static ssize_t scmi_dbg_raw_mode_message_async_write(struct kiocb *iocb,
+						     struct iov_iter *from)
 {
-	return scmi_dbg_raw_mode_common_write(filp, buf, count, ppos, true);
+	return scmi_dbg_raw_mode_common_write(iocb, from, true);
 }
 
 static const struct file_operations scmi_dbg_raw_mode_message_async_fops = {
 	.open = scmi_dbg_raw_mode_open,
 	.release = scmi_dbg_raw_mode_release,
-	.read = scmi_dbg_raw_mode_message_read,
-	.write = scmi_dbg_raw_mode_message_async_write,
+	.read_iter = scmi_dbg_raw_mode_message_read,
+	.write_iter = scmi_dbg_raw_mode_message_async_write,
 	.poll = scmi_dbg_raw_mode_message_poll,
 	.owner = THIS_MODULE,
 };
 
-static ssize_t scmi_test_dbg_raw_mode_notif_read(struct file *filp,
-						 char __user *buf,
-						 size_t count, loff_t *ppos)
+static ssize_t scmi_test_dbg_raw_mode_notif_read(struct kiocb *iocb,
+						 struct iov_iter *to)
 {
-	return scmi_dbg_raw_mode_common_read(filp, buf, count, ppos,
-					     SCMI_RAW_NOTIF_QUEUE);
+	return scmi_dbg_raw_mode_common_read(iocb, to, SCMI_RAW_NOTIF_QUEUE);
 }
 
 static __poll_t
@@ -996,17 +984,15 @@ scmi_test_dbg_raw_mode_notif_poll(struct file *filp,
 static const struct file_operations scmi_dbg_raw_mode_notification_fops = {
 	.open = scmi_dbg_raw_mode_open,
 	.release = scmi_dbg_raw_mode_release,
-	.read = scmi_test_dbg_raw_mode_notif_read,
+	.read_iter = scmi_test_dbg_raw_mode_notif_read,
 	.poll = scmi_test_dbg_raw_mode_notif_poll,
 	.owner = THIS_MODULE,
 };
 
-static ssize_t scmi_test_dbg_raw_mode_errors_read(struct file *filp,
-						  char __user *buf,
-						  size_t count, loff_t *ppos)
+static ssize_t scmi_test_dbg_raw_mode_errors_read(struct kiocb *iocb,
+						  struct iov_iter *to)
 {
-	return scmi_dbg_raw_mode_common_read(filp, buf, count, ppos,
-					     SCMI_RAW_ERRS_QUEUE);
+	return scmi_dbg_raw_mode_common_read(iocb, to, SCMI_RAW_ERRS_QUEUE);
 }
 
 static __poll_t
@@ -1019,7 +1005,7 @@ scmi_test_dbg_raw_mode_errors_poll(struct file *filp,
 static const struct file_operations scmi_dbg_raw_mode_errors_fops = {
 	.open = scmi_dbg_raw_mode_open,
 	.release = scmi_dbg_raw_mode_release,
-	.read = scmi_test_dbg_raw_mode_errors_read,
+	.read_iter = scmi_test_dbg_raw_mode_errors_read,
 	.poll = scmi_test_dbg_raw_mode_errors_poll,
 	.owner = THIS_MODULE,
 };
