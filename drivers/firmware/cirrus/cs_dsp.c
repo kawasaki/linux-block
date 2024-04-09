@@ -405,11 +405,9 @@ static void cs_dsp_debugfs_clear(struct cs_dsp *dsp)
 	dsp->bin_file_name = NULL;
 }
 
-static ssize_t cs_dsp_debugfs_wmfw_read(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
+static ssize_t cs_dsp_debugfs_wmfw_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct cs_dsp *dsp = file->private_data;
+	struct cs_dsp *dsp = iocb->ki_filp->private_data;
 	ssize_t ret;
 
 	mutex_lock(&dsp->pwr_lock);
@@ -417,19 +415,16 @@ static ssize_t cs_dsp_debugfs_wmfw_read(struct file *file,
 	if (!dsp->wmfw_file_name || !dsp->booted)
 		ret = 0;
 	else
-		ret = simple_read_from_buffer(user_buf, count, ppos,
-					      dsp->wmfw_file_name,
-					      strlen(dsp->wmfw_file_name));
+		ret = simple_copy_to_iter(dsp->wmfw_file_name, &iocb->ki_pos,
+					      strlen(dsp->wmfw_file_name), to);
 
 	mutex_unlock(&dsp->pwr_lock);
 	return ret;
 }
 
-static ssize_t cs_dsp_debugfs_bin_read(struct file *file,
-				       char __user *user_buf,
-				       size_t count, loff_t *ppos)
+static ssize_t cs_dsp_debugfs_bin_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct cs_dsp *dsp = file->private_data;
+	struct cs_dsp *dsp = iocb->ki_filp->private_data;
 	ssize_t ret;
 
 	mutex_lock(&dsp->pwr_lock);
@@ -437,9 +432,8 @@ static ssize_t cs_dsp_debugfs_bin_read(struct file *file,
 	if (!dsp->bin_file_name || !dsp->booted)
 		ret = 0;
 	else
-		ret = simple_read_from_buffer(user_buf, count, ppos,
-					      dsp->bin_file_name,
-					      strlen(dsp->bin_file_name));
+		ret = simple_copy_to_iter(dsp->bin_file_name, &iocb->ki_pos,
+					      strlen(dsp->bin_file_name), to);
 
 	mutex_unlock(&dsp->pwr_lock);
 	return ret;
@@ -453,14 +447,14 @@ static const struct {
 		.name = "wmfw_file_name",
 		.fops = {
 			.open = simple_open,
-			.read = cs_dsp_debugfs_wmfw_read,
+			.read_iter = cs_dsp_debugfs_wmfw_read,
 		},
 	},
 	{
 		.name = "bin_file_name",
 		.fops = {
 			.open = simple_open,
-			.read = cs_dsp_debugfs_bin_read,
+			.read_iter = cs_dsp_debugfs_bin_read,
 		},
 	},
 };
