@@ -315,6 +315,7 @@ out:
 
 	return retval;
 }
+FOPS_READ_ITER_HELPER(hpet_read);
 
 static __poll_t hpet_poll(struct file *file, poll_table * wait)
 {
@@ -700,7 +701,7 @@ hpet_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 static const struct file_operations hpet_fops = {
 	.owner = THIS_MODULE,
-	.read = hpet_read,
+	.read_iter = hpet_read_iter,
 	.poll = hpet_poll,
 	.unlocked_ioctl = hpet_ioctl,
 #ifdef CONFIG_COMPAT
