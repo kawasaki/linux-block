@@ -138,28 +138,10 @@ int string_get_size(u64 size, u64 blk_size, const enum string_size_units units,
 }
 EXPORT_SYMBOL(string_get_size);
 
-/**
- * parse_int_array_user - Split string into a sequence of integers
- * @from:	The user space buffer to read from
- * @count:	The maximum number of bytes to read
- * @array:	Returned pointer to sequence of integers
- *
- * On success @array is allocated and initialized with a sequence of
- * integers extracted from the @from plus an additional element that
- * begins the sequence and specifies the integers count.
- *
- * Caller takes responsibility for freeing @array when it is no longer
- * needed.
- */
-int parse_int_array_user(const char __user *from, size_t count, int **array)
+static int __parse_int_array(char *buf, int **array)
 {
 	int *ints, nints;
-	char *buf;
 	int ret = 0;
-
-	buf = memdup_user_nul(from, count);
-	if (IS_ERR(buf))
-		return PTR_ERR(buf);
 
 	get_options(buf, 0, &nints);
 	if (!nints) {
@@ -179,6 +161,30 @@ int parse_int_array_user(const char __user *from, size_t count, int **array)
 free_buf:
 	kfree(buf);
 	return ret;
+}
+
+/**
+ * parse_int_array_user - Split string into a sequence of integers
+ * @from:	The user space buffer to read from
+ * @count:	The maximum number of bytes to read
+ * @array:	Returned pointer to sequence of integers
+ *
+ * On success @array is allocated and initialized with a sequence of
+ * integers extracted from the @from plus an additional element that
+ * begins the sequence and specifies the integers count.
+ *
+ * Caller takes responsibility for freeing @array when it is no longer
+ * needed.
+ */
+int parse_int_array_user(const char __user *from, size_t count, int **array)
+{
+	char *buf;
+
+	buf = memdup_user_nul(from, count);
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
+
+	return __parse_int_array(buf, array);
 }
 EXPORT_SYMBOL(parse_int_array_user);
 
