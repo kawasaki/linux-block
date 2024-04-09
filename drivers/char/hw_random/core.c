@@ -276,11 +276,12 @@ out_put:
 	put_rng(rng);
 	goto out;
 }
+FOPS_READ_ITER_HELPER(rng_dev_read);
 
 static const struct file_operations rng_chrdev_ops = {
 	.owner		= THIS_MODULE,
 	.open		= rng_dev_open,
-	.read		= rng_dev_read,
+	.read_iter	= rng_dev_read_iter,
 	.llseek		= noop_llseek,
 };
 
