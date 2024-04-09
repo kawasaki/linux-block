@@ -119,11 +119,12 @@ static ssize_t gnss_read(struct file *file, char __user *buf,
 
 	return ret;
 }
+FOPS_READ_ITER_HELPER(gnss_read);
 
-static ssize_t gnss_write(struct file *file, const char __user *buf,
-				size_t count, loff_t *pos)
+static ssize_t gnss_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct gnss_device *gdev = file->private_data;
+	struct gnss_device *gdev = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	size_t written = 0;
 	int ret;
 
@@ -148,7 +149,7 @@ static ssize_t gnss_write(struct file *file, const char __user *buf,
 		if (n > GNSS_WRITE_BUF_SIZE)
 			n = GNSS_WRITE_BUF_SIZE;
 
-		if (copy_from_user(gdev->write_buf, buf, n)) {
+		if (!copy_from_iter_full(gdev->write_buf, n, from)) {
 			ret = -EFAULT;
 			goto out_unlock;
 		}
@@ -170,7 +171,6 @@ static ssize_t gnss_write(struct file *file, const char __user *buf,
 			break;
 
 		written += ret;
-		buf += ret;
 
 		if (written == count)
 			break;
@@ -203,8 +203,8 @@ static const struct file_operations gnss_fops = {
 	.owner		= THIS_MODULE,
 	.open		= gnss_open,
 	.release	= gnss_release,
-	.read		= gnss_read,
-	.write		= gnss_write,
+	.read_iter	= gnss_read_iter,
+	.write_iter	= gnss_write,
 	.poll		= gnss_poll,
 };
 
