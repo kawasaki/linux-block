@@ -2595,11 +2595,11 @@ void mlx5_ib_devx_cleanup(struct mlx5_ib_dev *dev)
 	}
 }
 
-static ssize_t devx_async_cmd_event_read(struct file *filp, char __user *buf,
-					 size_t count, loff_t *pos)
+static ssize_t devx_async_cmd_event_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct devx_async_cmd_event_file *comp_ev_file = filp->private_data;
+	struct devx_async_cmd_event_file *comp_ev_file = iocb->ki_filp->private_data;
 	struct devx_async_event_queue *ev_queue = &comp_ev_file->ev_queue;
+	size_t count = iov_iter_count(to);
 	struct devx_async_data *event;
 	int ret = 0;
 	size_t eventsz;
@@ -2609,7 +2609,7 @@ static ssize_t devx_async_cmd_event_read(struct file *filp, char __user *buf,
 	while (list_empty(&ev_queue->event_list)) {
 		spin_unlock_irq(&ev_queue->lock);
 
-		if (filp->f_flags & O_NONBLOCK)
+		if (iocb->ki_filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
 		if (wait_event_interruptible(
@@ -2639,7 +2639,7 @@ static ssize_t devx_async_cmd_event_read(struct file *filp, char __user *buf,
 	list_del(ev_queue->event_list.next);
 	spin_unlock_irq(&ev_queue->lock);
 
-	if (copy_to_user(buf, &event->hdr, eventsz))
+	if (!copy_to_iter_full(&event->hdr, eventsz, to))
 		ret = -EFAULT;
 	else
 		ret = eventsz;
@@ -2670,17 +2670,17 @@ static __poll_t devx_async_cmd_event_poll(struct file *filp,
 
 static const struct file_operations devx_async_cmd_event_fops = {
 	.owner	 = THIS_MODULE,
-	.read	 = devx_async_cmd_event_read,
+	.read_iter	 = devx_async_cmd_event_read,
 	.poll    = devx_async_cmd_event_poll,
 	.release = uverbs_uobject_fd_release,
 };
 
-static ssize_t devx_async_event_read(struct file *filp, char __user *buf,
-				     size_t count, loff_t *pos)
+static ssize_t devx_async_event_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct devx_async_event_file *ev_file = filp->private_data;
+	struct devx_async_event_file *ev_file = iocb->ki_filp->private_data;
 	struct devx_event_subscription *event_sub;
 	struct devx_async_event_data *event;
+	size_t count = iov_iter_count(to);
 	int ret = 0;
 	size_t eventsz;
 	bool omit_data;
@@ -2700,7 +2700,7 @@ static ssize_t devx_async_event_read(struct file *filp, char __user *buf,
 	while (list_empty(&ev_file->event_list)) {
 		spin_unlock_irq(&ev_file->lock);
 
-		if (filp->f_flags & O_NONBLOCK)
+		if (iocb->ki_filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
 		if (wait_event_interruptible(ev_file->poll_wait,
@@ -2742,7 +2742,7 @@ static ssize_t devx_async_event_read(struct file *filp, char __user *buf,
 
 	spin_unlock_irq(&ev_file->lock);
 
-	if (copy_to_user(buf, event_data, eventsz))
+	if (!copy_to_iter_full(event_data, eventsz, to))
 		/* This points to an application issue, not a kernel concern */
 		ret = -EFAULT;
 	else
@@ -2784,7 +2784,7 @@ static void devx_free_subscription(struct rcu_head *rcu)
 
 static const struct file_operations devx_async_event_fops = {
 	.owner	 = THIS_MODULE,
-	.read	 = devx_async_event_read,
+	.read_iter	 = devx_async_event_read,
 	.poll    = devx_async_event_poll,
 	.release = uverbs_uobject_fd_release,
 };
