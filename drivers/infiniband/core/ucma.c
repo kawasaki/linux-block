@@ -1746,6 +1746,7 @@ static ssize_t ucma_write(struct file *filp, const char __user *buf,
 
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(ucma_write);
 
 static __poll_t ucma_poll(struct file *filp, struct poll_table_struct *wait)
 {
@@ -1815,7 +1816,7 @@ static const struct file_operations ucma_fops = {
 	.owner 	 = THIS_MODULE,
 	.open 	 = ucma_open,
 	.release = ucma_close,
-	.write	 = ucma_write,
+	.write_iter = ucma_write_iter,
 	.poll    = ucma_poll,
 };
 

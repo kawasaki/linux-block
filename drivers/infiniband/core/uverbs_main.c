@@ -285,6 +285,7 @@ static ssize_t ib_uverbs_async_event_read(struct file *filp, char __user *buf,
 	return ib_uverbs_event_read(&file->ev_queue, filp, buf, count, pos,
 				    sizeof(struct ib_uverbs_async_event_desc));
 }
+FOPS_READ_ITER_HELPER(ib_uverbs_async_event_read);
 
 static ssize_t ib_uverbs_comp_event_read(struct file *filp, char __user *buf,
 					 size_t count, loff_t *pos)
@@ -296,6 +297,7 @@ static ssize_t ib_uverbs_comp_event_read(struct file *filp, char __user *buf,
 				    pos,
 				    sizeof(struct ib_uverbs_comp_event_desc));
 }
+FOPS_READ_ITER_HELPER(ib_uverbs_comp_event_read);
 
 static __poll_t ib_uverbs_event_poll(struct ib_uverbs_event_queue *ev_queue,
 					 struct file *filp,
@@ -349,7 +351,7 @@ static int ib_uverbs_comp_event_fasync(int fd, struct file *filp, int on)
 
 const struct file_operations uverbs_event_fops = {
 	.owner	 = THIS_MODULE,
-	.read	 = ib_uverbs_comp_event_read,
+	.read_iter = ib_uverbs_comp_event_read_iter,
 	.poll    = ib_uverbs_comp_event_poll,
 	.release = uverbs_uobject_fd_release,
 	.fasync  = ib_uverbs_comp_event_fasync,
@@ -357,7 +359,7 @@ const struct file_operations uverbs_event_fops = {
 
 const struct file_operations uverbs_async_event_fops = {
 	.owner	 = THIS_MODULE,
-	.read	 = ib_uverbs_async_event_read,
+	.read_iter = ib_uverbs_async_event_read_iter,
 	.poll    = ib_uverbs_async_event_poll,
 	.release = uverbs_async_event_release,
 	.fasync  = ib_uverbs_async_event_fasync,
@@ -682,6 +684,7 @@ out_unlock:
 	srcu_read_unlock(&file->device->disassociate_srcu, srcu_key);
 	return (ret) ? : count;
 }
+FOPS_WRITE_ITER_HELPER(ib_uverbs_write);
 
 static const struct vm_operations_struct rdma_umap_ops;
 
@@ -986,7 +989,7 @@ static int ib_uverbs_close(struct inode *inode, struct file *filp)
 
 static const struct file_operations uverbs_fops = {
 	.owner	 = THIS_MODULE,
-	.write	 = ib_uverbs_write,
+	.write_iter = ib_uverbs_write_iter,
 	.open	 = ib_uverbs_open,
 	.release = ib_uverbs_close,
 	.unlocked_ioctl = ib_uverbs_ioctl,
@@ -995,7 +998,7 @@ static const struct file_operations uverbs_fops = {
 
 static const struct file_operations uverbs_mmap_fops = {
 	.owner	 = THIS_MODULE,
-	.write	 = ib_uverbs_write,
+	.write_iter = ib_uverbs_write_iter,
 	.mmap    = ib_uverbs_mmap,
 	.open	 = ib_uverbs_open,
 	.release = ib_uverbs_close,
