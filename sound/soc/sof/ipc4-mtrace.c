@@ -274,6 +274,7 @@ static ssize_t sof_ipc4_mtrace_dfs_read(struct file *file, char __user *buffer,
 
 	return count;
 }
+FOPS_READ_ITER_HELPER(sof_ipc4_mtrace_dfs_read);
 
 static int sof_ipc4_mtrace_dfs_release(struct inode *inode, struct file *file)
 {
@@ -291,17 +292,17 @@ static int sof_ipc4_mtrace_dfs_release(struct inode *inode, struct file *file)
 
 static const struct file_operations sof_dfs_mtrace_fops = {
 	.open = sof_ipc4_mtrace_dfs_open,
-	.read = sof_ipc4_mtrace_dfs_read,
+	.read_iter = sof_ipc4_mtrace_dfs_read_iter,
 	.llseek = default_llseek,
 	.release = sof_ipc4_mtrace_dfs_release,
 
 	.owner = THIS_MODULE,
 };
 
-static ssize_t sof_ipc4_priority_mask_dfs_read(struct file *file, char __user *to,
-					       size_t count, loff_t *ppos)
+static ssize_t sof_ipc4_priority_mask_dfs_read(struct kiocb *iocb,
+					       struct iov_iter *to)
 {
-	struct sof_mtrace_priv *priv = file->private_data;
+	struct sof_mtrace_priv *priv = iocb->ki_filp->private_data;
 	int i, ret, offset, remaining;
 	char *buf;
 
@@ -322,8 +323,7 @@ static ssize_t sof_ipc4_priority_mask_dfs_read(struct file *file, char __user *t
 			 priv->state_info.logs_priorities_mask[i]);
 	}
 
-	ret = simple_read_from_buffer(to, count, ppos, buf, strlen(buf));
-
+	ret = simple_copy_to_iter(buf, &iocb->ki_pos, strlen(buf), to);
 	kfree(buf);
 	return ret;
 }
@@ -368,11 +368,12 @@ out:
 	kfree(buf);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(sof_ipc4_priority_mask_dfs_write);
 
 static const struct file_operations sof_dfs_priority_mask_fops = {
 	.open = simple_open,
-	.read = sof_ipc4_priority_mask_dfs_read,
-	.write = sof_ipc4_priority_mask_dfs_write,
+	.read_iter = sof_ipc4_priority_mask_dfs_read,
+	.write_iter = sof_ipc4_priority_mask_dfs_write_iter,
 	.llseek = default_llseek,
 
 	.owner = THIS_MODULE,
