@@ -26,19 +26,17 @@ static unsigned long mmapper_size;
 static unsigned long p_buf;
 static char *v_buf;
 
-static ssize_t mmapper_read(struct file *file, char __user *buf, size_t count,
-			    loff_t *ppos)
+static ssize_t mmapper_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	return simple_read_from_buffer(buf, count, ppos, v_buf, mmapper_size);
+	return simple_copy_to_iter(v_buf, &iocb->ki_pos, mmapper_size, to);
 }
 
-static ssize_t mmapper_write(struct file *file, const char __user *buf,
-			     size_t count, loff_t *ppos)
+static ssize_t mmapper_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	if (*ppos > mmapper_size)
+	if (iocb->ki_pos > mmapper_size)
 		return -EINVAL;
 
-	return simple_write_to_buffer(v_buf, mmapper_size, ppos, buf, count);
+	return simple_copy_from_iter(v_buf, &iocb->ki_pos,  mmapper_size, from);
 }
 
 static long mmapper_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -82,8 +80,8 @@ static int mmapper_release(struct inode *inode, struct file *file)
 
 static const struct file_operations mmapper_fops = {
 	.owner		= THIS_MODULE,
-	.read		= mmapper_read,
-	.write		= mmapper_write,
+	.read_iter	= mmapper_read,
+	.write_iter	= mmapper_write,
 	.unlocked_ioctl	= mmapper_ioctl,
 	.mmap		= mmapper_mmap,
 	.open		= mmapper_open,
