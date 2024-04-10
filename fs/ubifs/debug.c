@@ -2728,6 +2728,7 @@ static ssize_t dfs_file_read(struct file *file, char __user *u, size_t count,
 
 	return provide_user_output(val, u, count, ppos);
 }
+FOPS_READ_ITER_HELPER(dfs_file_read);
 
 /**
  * interpret_user_input - interpret user debugfs file input.
@@ -2801,11 +2802,12 @@ static ssize_t dfs_file_write(struct file *file, const char __user *u,
 
 	return count;
 }
+FOPS_WRITE_ITER_HELPER(dfs_file_write);
 
 static const struct file_operations dfs_fops = {
 	.open = dfs_file_open,
-	.read = dfs_file_read,
-	.write = dfs_file_write,
+	.read_iter = dfs_file_read_iter,
+	.write_iter = dfs_file_write_iter,
 	.owner = THIS_MODULE,
 };
 
