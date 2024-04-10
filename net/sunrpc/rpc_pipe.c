@@ -320,6 +320,7 @@ out_unlock:
 	inode_unlock(inode);
 	return res;
 }
+FOPS_READ_ITER_HELPER(rpc_pipe_read);
 
 static ssize_t
 rpc_pipe_write(struct file *filp, const char __user *buf, size_t len, loff_t *offset)
@@ -334,6 +335,7 @@ rpc_pipe_write(struct file *filp, const char __user *buf, size_t len, loff_t *of
 	inode_unlock(inode);
 	return res;
 }
+FOPS_WRITE_ITER_HELPER(rpc_pipe_write);
 
 static __poll_t
 rpc_pipe_poll(struct file *filp, struct poll_table_struct *wait)
@@ -385,8 +387,8 @@ rpc_pipe_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 static const struct file_operations rpc_pipe_fops = {
 	.owner		= THIS_MODULE,
-	.read		= rpc_pipe_read,
-	.write		= rpc_pipe_write,
+	.read_iter	= rpc_pipe_read_iter,
+	.write_iter	= rpc_pipe_write_iter,
 	.poll		= rpc_pipe_poll,
 	.unlocked_ioctl	= rpc_pipe_ioctl,
 	.open		= rpc_pipe_open,
@@ -448,7 +450,7 @@ rpc_info_release(struct inode *inode, struct file *file)
 static const struct file_operations rpc_info_operations = {
 	.owner		= THIS_MODULE,
 	.open		= rpc_info_open,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= rpc_info_release,
 };

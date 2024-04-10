@@ -1768,6 +1768,7 @@ static ssize_t cache_read_pipefs(struct file *filp, char __user *buf,
 
 	return cache_read(filp, buf, count, ppos, cd);
 }
+FOPS_READ_ITER_HELPER(cache_read_pipefs);
 
 static ssize_t cache_write_pipefs(struct file *filp, const char __user *buf,
 				  size_t count, loff_t *ppos)
@@ -1776,6 +1777,7 @@ static ssize_t cache_write_pipefs(struct file *filp, const char __user *buf,
 
 	return cache_write(filp, buf, count, ppos, cd);
 }
+FOPS_WRITE_ITER_HELPER(cache_write_pipefs);
 
 static __poll_t cache_poll_pipefs(struct file *filp, poll_table *wait)
 {
@@ -1809,8 +1811,8 @@ static int cache_release_pipefs(struct inode *inode, struct file *filp)
 
 const struct file_operations cache_file_operations_pipefs = {
 	.owner		= THIS_MODULE,
-	.read		= cache_read_pipefs,
-	.write		= cache_write_pipefs,
+	.read_iter	= cache_read_pipefs_iter,
+	.write_iter	= cache_write_pipefs_iter,
 	.poll		= cache_poll_pipefs,
 	.unlocked_ioctl	= cache_ioctl_pipefs, /* for FIONREAD */
 	.open		= cache_open_pipefs,
@@ -1833,7 +1835,7 @@ static int content_release_pipefs(struct inode *inode, struct file *filp)
 
 const struct file_operations content_file_operations_pipefs = {
 	.open		= content_open_pipefs,
-	.read		= seq_read,
+	.read_iter	= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= content_release_pipefs,
 };
@@ -1859,6 +1861,7 @@ static ssize_t read_flush_pipefs(struct file *filp, char __user *buf,
 
 	return read_flush(filp, buf, count, ppos, cd);
 }
+FOPS_READ_ITER_HELPER(read_flush_pipefs);
 
 static ssize_t write_flush_pipefs(struct file *filp,
 				  const char __user *buf,
@@ -1868,11 +1871,12 @@ static ssize_t write_flush_pipefs(struct file *filp,
 
 	return write_flush(filp, buf, count, ppos, cd);
 }
+FOPS_WRITE_ITER_HELPER(write_flush_pipefs);
 
 const struct file_operations cache_flush_operations_pipefs = {
 	.open		= open_flush_pipefs,
-	.read		= read_flush_pipefs,
-	.write		= write_flush_pipefs,
+	.read_iter	= read_flush_pipefs_iter,
+	.write_iter	= write_flush_pipefs_iter,
 	.release	= release_flush_pipefs,
 };
 
