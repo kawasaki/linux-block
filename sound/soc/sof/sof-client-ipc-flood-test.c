@@ -243,29 +243,30 @@ out:
 	kfree(string);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(sof_ipc_flood_dfs_write);
 
 /* return the result of the last IPC flood test */
-static ssize_t sof_ipc_flood_dfs_read(struct file *file, char __user *buffer,
-				      size_t count, loff_t *ppos)
+static ssize_t sof_ipc_flood_dfs_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct sof_client_dev *cdev = file->private_data;
+	struct sof_client_dev *cdev = iocb->ki_filp->private_data;
 	struct sof_ipc_flood_priv *priv = cdev->data;
+	size_t count = iov_iter_count(to);
 	size_t size_ret;
 
 	struct dentry *dentry;
 
-	dentry = file->f_path.dentry;
+	dentry = iocb->ki_filp->f_path.dentry;
 	if (!strcmp(dentry->d_name.name, DEBUGFS_IPC_FLOOD_COUNT) ||
 	    !strcmp(dentry->d_name.name, DEBUGFS_IPC_FLOOD_DURATION)) {
-		if (*ppos)
+		if (iocb->ki_pos)
 			return 0;
 
 		count = min_t(size_t, count, strlen(priv->buf));
-		size_ret = copy_to_user(buffer, priv->buf, count);
+		size_ret = !copy_to_iter_full(priv->buf, count, to);
 		if (size_ret)
 			return -EFAULT;
 
-		*ppos += count;
+		iocb->ki_pos += count;
 		return count;
 	}
 	return count;
@@ -280,9 +281,9 @@ static int sof_ipc_flood_dfs_release(struct inode *inode, struct file *file)
 
 static const struct file_operations sof_ipc_flood_fops = {
 	.open = sof_ipc_flood_dfs_open,
-	.read = sof_ipc_flood_dfs_read,
+	.read_iter = sof_ipc_flood_dfs_read,
 	.llseek = default_llseek,
-	.write = sof_ipc_flood_dfs_write,
+	.write_iter = sof_ipc_flood_dfs_write_iter,
 	.release = sof_ipc_flood_dfs_release,
 
 	.owner = THIS_MODULE,
