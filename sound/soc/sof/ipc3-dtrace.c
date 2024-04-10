@@ -217,10 +217,11 @@ error:
 	kfree(elems);
 	return ret;
 }
+FOPS_WRITE_ITER_HELPER(dfsentry_trace_filter_write);
 
 static const struct file_operations sof_dfs_trace_filter_fops = {
 	.open = simple_open,
-	.write = dfsentry_trace_filter_write,
+	.write_iter = dfsentry_trace_filter_write_iter,
 	.llseek = default_llseek,
 };
 
@@ -313,14 +314,14 @@ static size_t sof_wait_dtrace_avail(struct snd_sof_dev *sdev, loff_t pos,
 	return sof_dtrace_avail(sdev, pos, buffer_size);
 }
 
-static ssize_t dfsentry_dtrace_read(struct file *file, char __user *buffer,
-				    size_t count, loff_t *ppos)
+static ssize_t dfsentry_dtrace_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct snd_sof_dfsentry *dfse = file->private_data;
+	struct snd_sof_dfsentry *dfse = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct snd_sof_dev *sdev = dfse->sdev;
 	struct sof_dtrace_priv *priv = sdev->fw_trace_data;
 	unsigned long rem;
-	loff_t lpos = *ppos;
+	loff_t lpos = iocb->ki_pos;
 	size_t avail, buffer_size = dfse->size;
 	u64 lpos_64;
 
@@ -360,11 +361,11 @@ static ssize_t dfsentry_dtrace_read(struct file *file, char __user *buffer,
 	 */
 	snd_dma_buffer_sync(&priv->dmatb, SNDRV_DMA_SYNC_CPU);
 	/* copy available trace data to debugfs */
-	rem = copy_to_user(buffer, ((u8 *)(dfse->buf) + lpos), count);
+	rem = !copy_to_iter_full(((u8 *)(dfse->buf) + lpos), count, to);
 	if (rem)
 		return -EFAULT;
 
-	*ppos += count;
+	iocb->ki_pos += count;
 
 	/* move debugfs reading position */
 	return count;
@@ -385,7 +386,7 @@ static int dfsentry_dtrace_release(struct inode *inode, struct file *file)
 
 static const struct file_operations sof_dfs_dtrace_fops = {
 	.open = simple_open,
-	.read = dfsentry_dtrace_read,
+	.read_iter = dfsentry_dtrace_read,
 	.llseek = default_llseek,
 	.release = dfsentry_dtrace_release,
 };
