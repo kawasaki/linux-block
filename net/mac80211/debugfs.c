@@ -17,8 +17,8 @@
 
 #define DEBUGFS_FORMAT_BUFFER_SIZE 100
 
-int mac80211_format_buffer(char __user *userbuf, size_t count,
-				  loff_t *ppos, char *fmt, ...)
+int mac80211_format_buffer(struct kiocb *iocb, struct iov_iter *to,
+			   char *fmt, ...)
 {
 	va_list args;
 	char buf[DEBUGFS_FORMAT_BUFFER_SIZE];
@@ -28,22 +28,20 @@ int mac80211_format_buffer(char __user *userbuf, size_t count,
 	res = vscnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
 
-	return simple_read_from_buffer(userbuf, count, ppos, buf, res);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, res, to);
 }
 
 #define DEBUGFS_READONLY_FILE_FN(name, fmt, value...)			\
-static ssize_t name## _read(struct file *file, char __user *userbuf,	\
-			    size_t count, loff_t *ppos)			\
+static ssize_t name## _read(struct kiocb *iocb, struct iov_iter *to)	\
 {									\
-	struct ieee80211_local *local = file->private_data;		\
+	struct ieee80211_local *local = iocb->ki_filp->private_data;	\
 									\
-	return mac80211_format_buffer(userbuf, count, ppos, 		\
-				      fmt "\n", ##value);		\
-}
+	return mac80211_format_buffer(iocb, to, fmt "\n", ##value);	\
+}									\
 
 #define DEBUGFS_READONLY_FILE_OPS(name)			\
 static const struct file_operations name## _ops = {			\
-	.read = name## _read,						\
+	.read_iter = name## _read,					\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 };
@@ -72,12 +70,9 @@ DEBUGFS_READONLY_FILE(wep_iv, "%#08x",
 DEBUGFS_READONLY_FILE(rate_ctrl_alg, "%s",
 	local->rate_ctrl ? local->rate_ctrl->ops->name : "hw/driver");
 
-static ssize_t aqm_read(struct file *file,
-			char __user *user_buf,
-			size_t count,
-			loff_t *ppos)
+static ssize_t aqm_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	struct fq *fq = &local->fq;
 	char buf[200];
 	int len = 0;
@@ -109,22 +104,19 @@ static ssize_t aqm_read(struct file *file,
 	rcu_read_unlock();
 	spin_unlock_bh(&local->fq.lock);
 
-	return simple_read_from_buffer(user_buf, count, ppos,
-				       buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t aqm_write(struct file *file,
-			 const char __user *user_buf,
-			 size_t count,
-			 loff_t *ppos)
+static ssize_t aqm_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	char buf[100];
 
 	if (count >= sizeof(buf))
 		return -EINVAL;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter(buf, count, from))
 		return -EFAULT;
 
 	if (count && buf[count - 1] == '\n')
@@ -143,17 +135,15 @@ static ssize_t aqm_write(struct file *file,
 }
 
 static const struct file_operations aqm_ops = {
-	.write = aqm_write,
-	.read = aqm_read,
+	.write_iter = aqm_write,
+	.read_iter = aqm_read,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
 
-static ssize_t airtime_flags_read(struct file *file,
-				  char __user *user_buf,
-				  size_t count, loff_t *ppos)
+static ssize_t airtime_flags_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	char buf[128] = {}, *pos, *end;
 
 	pos = buf;
@@ -166,21 +156,19 @@ static ssize_t airtime_flags_read(struct file *file,
 		pos += scnprintf(pos, end - pos, "AIRTIME_RX\t(%lx)\n",
 				 AIRTIME_USE_RX);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf,
-				       strlen(buf));
+	return simple_copy_to_iter(buf, &iocb->ki_pos, strlen(buf), to);
 }
 
-static ssize_t airtime_flags_write(struct file *file,
-				   const char __user *user_buf,
-				   size_t count, loff_t *ppos)
+static ssize_t airtime_flags_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	char buf[16];
 
 	if (count >= sizeof(buf))
 		return -EINVAL;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter(buf, count, from))
 		return -EFAULT;
 
 	if (count && buf[count - 1] == '\n')
@@ -195,17 +183,15 @@ static ssize_t airtime_flags_write(struct file *file,
 }
 
 static const struct file_operations airtime_flags_ops = {
-	.write = airtime_flags_write,
-	.read = airtime_flags_read,
+	.write_iter = airtime_flags_write,
+	.read_iter = airtime_flags_read,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
 
-static ssize_t aql_pending_read(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
+static ssize_t aql_pending_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	char buf[400];
 	int len = 0;
 
@@ -221,22 +207,18 @@ static ssize_t aql_pending_read(struct file *file,
 			atomic_read(&local->aql_ac_pending_airtime[IEEE80211_AC_BE]),
 			atomic_read(&local->aql_ac_pending_airtime[IEEE80211_AC_BK]),
 			atomic_read(&local->aql_total_pending_airtime));
-	return simple_read_from_buffer(user_buf, count, ppos,
-				       buf, len);
+	return simple_copy_to_iter( buf, &iocb->ki_pos, len, to);
 }
 
 static const struct file_operations aql_pending_ops = {
-	.read = aql_pending_read,
+	.read_iter = aql_pending_read,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
 
-static ssize_t aql_txq_limit_read(struct file *file,
-				  char __user *user_buf,
-				  size_t count,
-				  loff_t *ppos)
+static ssize_t aql_txq_limit_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	char buf[400];
 	int len = 0;
 
@@ -254,24 +236,21 @@ static ssize_t aql_txq_limit_read(struct file *file,
 			local->aql_txq_limit_high[IEEE80211_AC_BE],
 			local->aql_txq_limit_low[IEEE80211_AC_BK],
 			local->aql_txq_limit_high[IEEE80211_AC_BK]);
-	return simple_read_from_buffer(user_buf, count, ppos,
-				       buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t aql_txq_limit_write(struct file *file,
-				   const char __user *user_buf,
-				   size_t count,
-				   loff_t *ppos)
+static ssize_t aql_txq_limit_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	char buf[100];
 	u32 ac, q_limit_low, q_limit_high, q_limit_low_old, q_limit_high_old;
 	struct sta_info *sta;
+	size_t count = iov_iter_count(from);
 
 	if (count >= sizeof(buf))
 		return -EINVAL;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	if (count && buf[count - 1] == '\n')
@@ -306,14 +285,13 @@ static ssize_t aql_txq_limit_write(struct file *file,
 }
 
 static const struct file_operations aql_txq_limit_ops = {
-	.write = aql_txq_limit_write,
-	.read = aql_txq_limit_read,
+	.write_iter = aql_txq_limit_write,
+	.read_iter = aql_txq_limit_read,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
 
-static ssize_t aql_enable_read(struct file *file, char __user *user_buf,
-			       size_t count, loff_t *ppos)
+static ssize_t aql_enable_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	char buf[3];
 	int len;
@@ -321,20 +299,20 @@ static ssize_t aql_enable_read(struct file *file, char __user *user_buf,
 	len = scnprintf(buf, sizeof(buf), "%d\n",
 			!static_key_false(&aql_disable.key));
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t aql_enable_write(struct file *file, const char __user *user_buf,
-				size_t count, loff_t *ppos)
+static ssize_t aql_enable_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	bool aql_disabled = static_key_false(&aql_disable.key);
+	size_t count = iov_iter_count(from);
 	char buf[3];
 	size_t len;
 
 	if (count > sizeof(buf))
 		return -EINVAL;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	buf[sizeof(buf) - 1] = '\0';
@@ -356,39 +334,33 @@ static ssize_t aql_enable_write(struct file *file, const char __user *user_buf,
 }
 
 static const struct file_operations aql_enable_ops = {
-	.write = aql_enable_write,
-	.read = aql_enable_read,
+	.write_iter = aql_enable_write,
+	.read_iter = aql_enable_read,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
 
-static ssize_t force_tx_status_read(struct file *file,
-				    char __user *user_buf,
-				    size_t count,
-				    loff_t *ppos)
+static ssize_t force_tx_status_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	char buf[3];
 	int len = 0;
 
 	len = scnprintf(buf, sizeof(buf), "%d\n", (int)local->force_tx_status);
 
-	return simple_read_from_buffer(user_buf, count, ppos,
-				       buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t force_tx_status_write(struct file *file,
-				     const char __user *user_buf,
-				     size_t count,
-				     loff_t *ppos)
+static ssize_t force_tx_status_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	char buf[3];
 
 	if (count >= sizeof(buf))
 		return -EINVAL;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	if (count && buf[count - 1] == '\n')
@@ -407,17 +379,17 @@ static ssize_t force_tx_status_write(struct file *file,
 }
 
 static const struct file_operations force_tx_status_ops = {
-	.write = force_tx_status_write,
-	.read = force_tx_status_read,
+	.write_iter = force_tx_status_write,
+	.read_iter = force_tx_status_read,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
 
 #ifdef CONFIG_PM
-static ssize_t reset_write(struct file *file, const char __user *user_buf,
-			   size_t count, loff_t *ppos)
+static ssize_t reset_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	int ret;
 
 	rtnl_lock();
@@ -435,7 +407,7 @@ static ssize_t reset_write(struct file *file, const char __user *user_buf,
 }
 
 static const struct file_operations reset_ops = {
-	.write = reset_write,
+	.write_iter = reset_write,
 	.open = simple_open,
 	.llseek = noop_llseek,
 };
@@ -502,10 +474,9 @@ static const char *hw_flag_names[] = {
 #undef FLAG
 };
 
-static ssize_t hwflags_read(struct file *file, char __user *user_buf,
-			    size_t count, loff_t *ppos)
+static ssize_t hwflags_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	size_t bufsz = 30 * NUM_IEEE80211_HW_FLAGS;
 	char *buf = kzalloc(bufsz, GFP_KERNEL);
 	char *pos = buf, *end = buf + bufsz - 1;
@@ -526,15 +497,14 @@ static ssize_t hwflags_read(struct file *file, char __user *user_buf,
 					 hw_flag_names[i]);
 	}
 
-	rv = simple_read_from_buffer(user_buf, count, ppos, buf, strlen(buf));
+	rv = simple_copy_to_iter(buf, &iocb->ki_pos, strlen(buf), to);
 	kfree(buf);
 	return rv;
 }
 
-static ssize_t misc_read(struct file *file, char __user *user_buf,
-			 size_t count, loff_t *ppos)
+static ssize_t misc_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	/* Max len of each line is 16 characters, plus 9 for 'pending:\n' */
 	size_t bufsz = IEEE80211_MAX_QUEUES * 16 + 9;
 	char *buf;
@@ -558,15 +528,14 @@ static ssize_t misc_read(struct file *file, char __user *user_buf,
 				 i, ln);
 	}
 
-	rv = simple_read_from_buffer(user_buf, count, ppos, buf, strlen(buf));
+	rv = simple_copy_to_iter(buf, &iocb->ki_pos, strlen(buf), to);
 	kfree(buf);
 	return rv;
 }
 
-static ssize_t queues_read(struct file *file, char __user *user_buf,
-			   size_t count, loff_t *ppos)
+static ssize_t queues_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ieee80211_local *local = file->private_data;
+	struct ieee80211_local *local = iocb->ki_filp->private_data;
 	unsigned long flags;
 	char buf[IEEE80211_MAX_QUEUES * 20];
 	int q, res = 0;
@@ -578,7 +547,7 @@ static ssize_t queues_read(struct file *file, char __user *user_buf,
 				skb_queue_len(&local->pending[q]));
 	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, res);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, res, to);
 }
 
 DEBUGFS_READONLY_FILE_OPS(hwflags);
@@ -588,8 +557,7 @@ DEBUGFS_READONLY_FILE_OPS(misc);
 /* statistics stuff */
 
 static ssize_t format_devstat_counter(struct ieee80211_local *local,
-	char __user *userbuf,
-	size_t count, loff_t *ppos,
+	struct kiocb *iocb, struct iov_iter *to,
 	int (*printvalue)(struct ieee80211_low_level_stats *stats, char *buf,
 			  int buflen))
 {
@@ -603,7 +571,7 @@ static ssize_t format_devstat_counter(struct ieee80211_local *local,
 	if (res)
 		return res;
 	res = printvalue(&stats, buf, sizeof(buf));
-	return simple_read_from_buffer(userbuf, count, ppos, buf, res);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, res, to);
 }
 
 #define DEBUGFS_DEVSTATS_FILE(name)					\
@@ -612,19 +580,16 @@ static int print_devstats_##name(struct ieee80211_low_level_stats *stats,\
 {									\
 	return scnprintf(buf, buflen, "%u\n", stats->name);		\
 }									\
-static ssize_t stats_ ##name## _read(struct file *file,			\
-				     char __user *userbuf,		\
-				     size_t count, loff_t *ppos)	\
+static ssize_t stats_ ##name## _read(struct kiocb *iocb,		\
+				     struct iov_iter *to)		\
 {									\
-	return format_devstat_counter(file->private_data,		\
-				      userbuf,				\
-				      count,				\
-				      ppos,				\
+	return format_devstat_counter(iocb->ki_filp->private_data,	\
+				      iocb, to,				\
 				      print_devstats_##name);		\
 }									\
 									\
 static const struct file_operations stats_ ##name## _ops = {		\
-	.read = stats_ ##name## _read,					\
+	.read_iter = stats_ ##name## _read,				\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 };

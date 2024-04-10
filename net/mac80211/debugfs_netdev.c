@@ -28,9 +28,7 @@ struct ieee80211_if_read_sdata_data {
 };
 
 static ssize_t ieee80211_if_read_sdata_handler(struct wiphy *wiphy,
-					       struct file *file,
-					       char *buf,
-					       size_t bufsize,
+					       char *buf, size_t bufsize,
 					       void *data)
 {
 	struct ieee80211_if_read_sdata_data *d = data;
@@ -39,12 +37,11 @@ static ssize_t ieee80211_if_read_sdata_handler(struct wiphy *wiphy,
 }
 
 static ssize_t ieee80211_if_read_sdata(
-	struct file *file,
-	char __user *userbuf,
-	size_t count, loff_t *ppos,
+	struct kiocb *iocb,
+	struct iov_iter *to,
 	ssize_t (*format)(const struct ieee80211_sub_if_data *sdata, char *, int))
 {
-	struct ieee80211_sub_if_data *sdata = file->private_data;
+	struct ieee80211_sub_if_data *sdata = iocb->ki_filp->private_data;
 	struct ieee80211_if_read_sdata_data data = {
 		.format = format,
 		.sdata = sdata,
@@ -52,44 +49,39 @@ static ssize_t ieee80211_if_read_sdata(
 	char buf[200];
 
 	return wiphy_locked_debugfs_read(sdata->local->hw.wiphy,
-					 file, buf, sizeof(buf),
-					 userbuf, count, ppos,
+					 iocb, buf, sizeof(buf), to,
 					 ieee80211_if_read_sdata_handler,
 					 &data);
 }
 
 struct ieee80211_if_write_sdata_data {
-	ssize_t (*write)(struct ieee80211_sub_if_data *, const char *, int);
+	ssize_t (*write)(struct ieee80211_sub_if_data *, char *, size_t);
 	struct ieee80211_sub_if_data *sdata;
 };
 
 static ssize_t ieee80211_if_write_sdata_handler(struct wiphy *wiphy,
-						struct file *file,
-						char *buf,
-						size_t count,
+						char *buf, size_t bufsize,
 						void *data)
 {
 	struct ieee80211_if_write_sdata_data *d = data;
 
-	return d->write(d->sdata, buf, count);
+	return d->write(d->sdata, buf, bufsize);
 }
 
 static ssize_t ieee80211_if_write_sdata(
-	struct file *file,
-	const char __user *userbuf,
-	size_t count, loff_t *ppos,
-	ssize_t (*write)(struct ieee80211_sub_if_data *sdata, const char *, int))
+	struct kiocb *iocb,
+	struct iov_iter *from,
+	ssize_t (*write)(struct ieee80211_sub_if_data *sdata, char *, size_t))
 {
-	struct ieee80211_sub_if_data *sdata = file->private_data;
+	struct ieee80211_sub_if_data *sdata = iocb->ki_filp->private_data;
 	struct ieee80211_if_write_sdata_data data = {
 		.write = write,
 		.sdata = sdata,
 	};
 	char buf[64];
 
-	return wiphy_locked_debugfs_write(sdata->local->hw.wiphy,
-					  file, buf, sizeof(buf),
-					  userbuf, count,
+	return wiphy_locked_debugfs_write(sdata->local->hw.wiphy, iocb,
+					  buf, sizeof(buf), from,
 					  ieee80211_if_write_sdata_handler,
 					  &data);
 }
@@ -100,7 +92,6 @@ struct ieee80211_if_read_link_data {
 };
 
 static ssize_t ieee80211_if_read_link_handler(struct wiphy *wiphy,
-					      struct file *file,
 					      char *buf,
 					      size_t bufsize,
 					      void *data)
@@ -111,12 +102,11 @@ static ssize_t ieee80211_if_read_link_handler(struct wiphy *wiphy,
 }
 
 static ssize_t ieee80211_if_read_link(
-	struct file *file,
-	char __user *userbuf,
-	size_t count, loff_t *ppos,
+	struct kiocb *iocb,
+	struct iov_iter *to,
 	ssize_t (*format)(const struct ieee80211_link_data *link, char *, int))
 {
-	struct ieee80211_link_data *link = file->private_data;
+	struct ieee80211_link_data *link = iocb->ki_filp->private_data;
 	struct ieee80211_if_read_link_data data = {
 		.format = format,
 		.link = link,
@@ -124,8 +114,7 @@ static ssize_t ieee80211_if_read_link(
 	char buf[200];
 
 	return wiphy_locked_debugfs_read(link->sdata->local->hw.wiphy,
-					 file, buf, sizeof(buf),
-					 userbuf, count, ppos,
+					 iocb, buf, sizeof(buf), to,
 					 ieee80211_if_read_link_handler,
 					 &data);
 }
@@ -136,23 +125,19 @@ struct ieee80211_if_write_link_data {
 };
 
 static ssize_t ieee80211_if_write_link_handler(struct wiphy *wiphy,
-					       struct file *file,
-					       char *buf,
-					       size_t count,
+					       char *buf, size_t bufsize,
 					       void *data)
 {
 	struct ieee80211_if_write_sdata_data *d = data;
 
-	return d->write(d->sdata, buf, count);
+	return d->write(d->sdata, buf, bufsize);
 }
 
-static ssize_t ieee80211_if_write_link(
-	struct file *file,
-	const char __user *userbuf,
-	size_t count, loff_t *ppos,
+static ssize_t ieee80211_if_write_link(struct kiocb *iocb,
+	struct iov_iter *from,
 	ssize_t (*write)(struct ieee80211_link_data *link, const char *, int))
 {
-	struct ieee80211_link_data *link = file->private_data;
+	struct ieee80211_link_data *link = iocb->ki_filp->private_data;
 	struct ieee80211_if_write_link_data data = {
 		.write = write,
 		.link = link,
@@ -160,8 +145,7 @@ static ssize_t ieee80211_if_write_link(
 	char buf[64];
 
 	return wiphy_locked_debugfs_write(link->sdata->local->hw.wiphy,
-					  file, buf, sizeof(buf),
-					  userbuf, count,
+					  iocb, buf, sizeof(buf), from,
 					  ieee80211_if_write_link_handler,
 					  &data);
 }
@@ -222,31 +206,27 @@ static ssize_t ieee80211_if_fmt_##name(					\
 
 #define _IEEE80211_IF_FILE_OPS(name, _read, _write)			\
 static const struct file_operations name##_ops = {			\
-	.read = (_read),						\
-	.write = (_write),						\
+	.read_iter = (_read),						\
+	.write_iter = (_write),						\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 }
 
 #define _IEEE80211_IF_FILE_R_FN(name)					\
-static ssize_t ieee80211_if_read_##name(struct file *file,		\
-					char __user *userbuf,		\
-					size_t count, loff_t *ppos)	\
+static ssize_t ieee80211_if_read_##name(struct kiocb *iocb,		\
+					struct iov_iter *to)		\
 {									\
-	return ieee80211_if_read_sdata(file,				\
-				       userbuf, count, ppos,		\
-				       ieee80211_if_fmt_##name);	\
-}
+	return ieee80211_if_read_sdata(iocb,				\
+				       to, ieee80211_if_fmt_##name);	\
+}									\
 
 #define _IEEE80211_IF_FILE_W_FN(name)					\
-static ssize_t ieee80211_if_write_##name(struct file *file,		\
-					 const char __user *userbuf,	\
-					 size_t count, loff_t *ppos)	\
+static ssize_t ieee80211_if_write_##name(struct kiocb *iocb,		\
+					 struct iov_iter *from)		\
 {									\
-	return ieee80211_if_write_sdata(file, userbuf,			\
-					count, ppos,			\
+	return ieee80211_if_write_sdata(iocb, from,			\
 					ieee80211_if_parse_##name);	\
-}
+}									\
 
 #define IEEE80211_IF_FILE_R(name)					\
 	_IEEE80211_IF_FILE_R_FN(name)					\
@@ -267,24 +247,20 @@ static ssize_t ieee80211_if_write_##name(struct file *file,		\
 	IEEE80211_IF_FILE_R(name)
 
 #define _IEEE80211_IF_LINK_R_FN(name)					\
-static ssize_t ieee80211_if_read_##name(struct file *file,		\
-					char __user *userbuf,		\
-					size_t count, loff_t *ppos)	\
+static ssize_t ieee80211_if_read_##name(struct kiocb *iocb,		\
+					struct iov_iter *to)		\
 {									\
-	return ieee80211_if_read_link(file,				\
-				      userbuf, count, ppos,		\
-				      ieee80211_if_fmt_##name);	\
-}
+	return ieee80211_if_read_link(iocb, to,				\
+				      ieee80211_if_fmt_##name);		\
+}									\
 
 #define _IEEE80211_IF_LINK_W_FN(name)					\
-static ssize_t ieee80211_if_write_##name(struct file *file,		\
-					 const char __user *userbuf,	\
-					 size_t count, loff_t *ppos)	\
+static ssize_t ieee80211_if_write_##name(struct kiocb *iocb,		\
+					 struct iov_iter *from)		\
 {									\
-	return ieee80211_if_write_link(file, userbuf,			\
-				       count, ppos,			\
+	return ieee80211_if_write_link(iocb, from,			\
 				       ieee80211_if_parse_##name);	\
-}
+}									\
 
 #define IEEE80211_IF_LINK_FILE_R(name)					\
 	_IEEE80211_IF_LINK_R_FN(name)					\
@@ -441,7 +417,7 @@ static ssize_t ieee80211_if_parse_smps(struct ieee80211_link_data *link,
 IEEE80211_IF_LINK_FILE_RW(smps);
 
 static ssize_t ieee80211_if_parse_tkip_mic_test(
-	struct ieee80211_sub_if_data *sdata, const char *buf, int buflen)
+	struct ieee80211_sub_if_data *sdata, char *buf, size_t buflen)
 {
 	struct ieee80211_local *local = sdata->local;
 	u8 addr[ETH_ALEN];
@@ -504,7 +480,7 @@ static ssize_t ieee80211_if_parse_tkip_mic_test(
 IEEE80211_IF_FILE_W(tkip_mic_test);
 
 static ssize_t ieee80211_if_parse_beacon_loss(
-	struct ieee80211_sub_if_data *sdata, const char *buf, int buflen)
+	struct ieee80211_sub_if_data *sdata, char *buf, size_t buflen)
 {
 	if (!ieee80211_sdata_running(sdata) || !sdata->vif.cfg.assoc)
 		return -ENOTCONN;
@@ -524,7 +500,7 @@ static ssize_t ieee80211_if_fmt_uapsd_queues(
 }
 
 static ssize_t ieee80211_if_parse_uapsd_queues(
-	struct ieee80211_sub_if_data *sdata, const char *buf, int buflen)
+	struct ieee80211_sub_if_data *sdata, char *buf, size_t buflen)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	u8 val;
@@ -552,7 +528,7 @@ static ssize_t ieee80211_if_fmt_uapsd_max_sp_len(
 }
 
 static ssize_t ieee80211_if_parse_uapsd_max_sp_len(
-	struct ieee80211_sub_if_data *sdata, const char *buf, int buflen)
+	struct ieee80211_sub_if_data *sdata, char *buf, size_t buflen)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	unsigned long val;
@@ -584,7 +560,7 @@ static ssize_t ieee80211_if_fmt_tdls_wider_bw(
 }
 
 static ssize_t ieee80211_if_parse_tdls_wider_bw(
-	struct ieee80211_sub_if_data *sdata, const char *buf, int buflen)
+	struct ieee80211_sub_if_data *sdata, char *buf, size_t buflen)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	u8 val;
@@ -665,7 +641,7 @@ static ssize_t ieee80211_if_fmt_tsf(
 }
 
 static ssize_t ieee80211_if_parse_tsf(
-	struct ieee80211_sub_if_data *sdata, const char *buf, int buflen)
+	struct ieee80211_sub_if_data *sdata, char *buf, size_t buflen)
 {
 	struct ieee80211_local *local = sdata->local;
 	unsigned long long tsf;
@@ -724,7 +700,7 @@ static ssize_t ieee80211_if_fmt_active_links(const struct ieee80211_sub_if_data 
 }
 
 static ssize_t ieee80211_if_parse_active_links(struct ieee80211_sub_if_data *sdata,
-					       const char *buf, int buflen)
+					       char *buf, size_t buflen)
 {
 	u16 active_links;
 
