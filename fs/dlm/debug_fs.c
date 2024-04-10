@@ -498,10 +498,10 @@ static int table_open2(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t table_write2(struct file *file, const char __user *user_buf,
-			    size_t count, loff_t *ppos)
+static ssize_t table_write2(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *seq = file->private_data;
+	struct seq_file *seq = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	int n, len, lkb_nodeid, lkb_status, error;
 	char name[DLM_RESNAME_MAXLEN + 1] = {};
 	struct dlm_ls *ls = seq->private;
@@ -509,8 +509,7 @@ static ssize_t table_write2(struct file *file, const char __user *user_buf,
 	char buf[256] = {};
 	uint32_t lkb_id;
 
-	if (copy_from_user(buf, user_buf,
-			   min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	n = sscanf(buf, "%x %" __stringify(DLM_RESNAME_MAXLEN) "s %x %d %d",
@@ -567,7 +566,7 @@ static const struct file_operations format2_fops = {
 	.owner   = THIS_MODULE,
 	.open    = table_open2,
 	.read_iter    = seq_read_iter,
-	.write   = table_write2,
+	.write_iter   = table_write2,
 	.llseek  = seq_lseek,
 	.release = seq_release
 };
@@ -591,10 +590,9 @@ static const struct file_operations format4_fops = {
 /*
  * dump lkb's on the ls_waiters list
  */
-static ssize_t waiters_read(struct file *file, char __user *userbuf,
-			    size_t count, loff_t *ppos)
+static ssize_t waiters_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct dlm_ls *ls = file->private_data;
+	struct dlm_ls *ls = iocb->ki_filp->private_data;
 	struct dlm_lkb *lkb;
 	size_t len = DLM_DEBUG_BUF_LEN, pos = 0, ret, rv;
 
@@ -619,23 +617,22 @@ static ssize_t waiters_read(struct file *file, char __user *userbuf,
 	spin_unlock_bh(&ls->ls_waiters_lock);
 	dlm_unlock_recovery(ls);
 
-	rv = simple_read_from_buffer(userbuf, count, ppos, debug_buf, pos);
+	rv = simple_copy_to_iter(debug_buf, &iocb->ki_pos, pos, to);
 out:
 	mutex_unlock(&debug_buf_lock);
 	return rv;
 }
 
-static ssize_t waiters_write(struct file *file, const char __user *user_buf,
-			     size_t count, loff_t *ppos)
+static ssize_t waiters_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct dlm_ls *ls = file->private_data;
+	struct dlm_ls *ls = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	int mstype, to_nodeid;
 	char buf[128] = {};
 	uint32_t lkb_id;
 	int n, error;
 
-	if (copy_from_user(buf, user_buf,
-			   min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	n = sscanf(buf, "%x %d %d", &lkb_id, &mstype, &to_nodeid);
@@ -657,8 +654,8 @@ static ssize_t waiters_write(struct file *file, const char __user *user_buf,
 static const struct file_operations waiters_fops = {
 	.owner   = THIS_MODULE,
 	.open    = simple_open,
-	.read    = waiters_read,
-	.write   = waiters_write,
+	.read_iter    = waiters_read,
+	.write_iter   = waiters_write,
 	.llseek  = default_llseek,
 };
 
@@ -700,9 +697,9 @@ static int dlm_version_show(struct seq_file *file, void *offset)
 }
 DEFINE_SHOW_ATTRIBUTE(dlm_version);
 
-static ssize_t dlm_rawmsg_write(struct file *fp, const char __user *user_buf,
-				size_t count, loff_t *ppos)
+static ssize_t dlm_rawmsg_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	size_t count = iov_iter_count(from);
 	void *buf;
 	int ret;
 
@@ -713,12 +710,12 @@ static ssize_t dlm_rawmsg_write(struct file *fp, const char __user *user_buf,
 	if (!buf)
 		return -ENOMEM;
 
-	if (copy_from_user(buf, user_buf, count)) {
+	if (!copy_from_iter_full(buf, count, from)) {
 		ret = -EFAULT;
 		goto out;
 	}
 
-	ret = dlm_midcomms_rawmsg_send(fp->private_data, buf, count);
+	ret = dlm_midcomms_rawmsg_send(iocb->ki_filp->private_data, buf, count);
 	if (ret)
 		goto out;
 
@@ -732,7 +729,7 @@ out:
 
 static const struct file_operations dlm_rawmsg_fops = {
 	.open	= simple_open,
-	.write	= dlm_rawmsg_write,
+	.write_iter	= dlm_rawmsg_write,
 };
 
 void *dlm_create_debug_comms_file(int nodeid, void *data)

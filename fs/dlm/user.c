@@ -507,10 +507,10 @@ static int check_version(struct dlm_write_request *req)
 /* a write to a lockspace device is a lock or unlock request, a write
    to the control device is to create/remove a lockspace */
 
-static ssize_t device_write(struct file *file, const char __user *buf,
-			    size_t count, loff_t *ppos)
+static ssize_t device_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct dlm_user_proc *proc = file->private_data;
+	struct dlm_user_proc *proc = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct dlm_write_request *kbuf;
 	int error;
 
@@ -528,7 +528,7 @@ static ssize_t device_write(struct file *file, const char __user *buf,
 	if (count > sizeof(struct dlm_write_request) + DLM_RESNAME_MAXLEN)
 		return -EINVAL;
 
-	kbuf = memdup_user_nul(buf, count);
+	kbuf = iterdup_nul(from, count);
 	if (IS_ERR(kbuf))
 		return PTR_ERR(kbuf);
 
@@ -861,6 +861,7 @@ static ssize_t device_read(struct file *file, char __user *buf, size_t count,
 	dlm_free_cb(cb);
 	return ret;
 }
+FOPS_READ_ITER_HELPER(device_read);
 
 static __poll_t device_poll(struct file *file, poll_table *wait)
 {
@@ -925,8 +926,8 @@ static int monitor_device_close(struct inode *inode, struct file *file)
 static const struct file_operations device_fops = {
 	.open    = device_open,
 	.release = device_close,
-	.read    = device_read,
-	.write   = device_write,
+	.read_iter    = device_read_iter,
+	.write_iter   = device_write,
 	.poll    = device_poll,
 	.owner   = THIS_MODULE,
 	.llseek  = noop_llseek,
@@ -935,8 +936,8 @@ static const struct file_operations device_fops = {
 static const struct file_operations ctl_device_fops = {
 	.open    = ctl_device_open,
 	.release = ctl_device_close,
-	.read    = device_read,
-	.write   = device_write,
+	.read_iter    = device_read_iter,
+	.write_iter   = device_write,
 	.owner   = THIS_MODULE,
 	.llseek  = noop_llseek,
 };

@@ -478,9 +478,9 @@ out:
 EXPORT_SYMBOL_GPL(dlm_posix_get);
 
 /* a read copies out one plock request from the send list */
-static ssize_t dev_read(struct file *file, char __user *u, size_t count,
-			loff_t *ppos)
+static ssize_t dev_read(struct kiocb *iocb, struct iov_iter *to)
 {
+	size_t count = iov_iter_count(to);
 	struct dlm_plock_info info;
 	struct plock_op *op = NULL;
 
@@ -510,16 +510,16 @@ static ssize_t dev_read(struct file *file, char __user *u, size_t count,
 	if (op->info.flags & DLM_PLOCK_FL_CLOSE)
 		dlm_release_plock_op(op);
 
-	if (copy_to_user(u, &info, sizeof(info)))
+	if (!copy_to_iter_full(&info, sizeof(info), to))
 		return -EFAULT;
 	return sizeof(info);
 }
 
 /* a write copies in one plock result that should match a plock_op
    on the recv list */
-static ssize_t dev_write(struct file *file, const char __user *u, size_t count,
-			 loff_t *ppos)
+static ssize_t dev_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	size_t count = iov_iter_count(from);
 	struct plock_op *op = NULL, *iter;
 	struct dlm_plock_info info;
 	int do_callback = 0;
@@ -527,7 +527,7 @@ static ssize_t dev_write(struct file *file, const char __user *u, size_t count,
 	if (count != sizeof(info))
 		return -EINVAL;
 
-	if (copy_from_user(&info, u, sizeof(info)))
+	if (!copy_from_iter_full(&info, sizeof(info), from))
 		return -EFAULT;
 
 	trace_dlm_plock_write(&info);
@@ -598,8 +598,8 @@ static __poll_t dev_poll(struct file *file, poll_table *wait)
 }
 
 static const struct file_operations dev_fops = {
-	.read    = dev_read,
-	.write   = dev_write,
+	.read_iter    = dev_read,
+	.write_iter   = dev_write,
 	.poll    = dev_poll,
 	.owner   = THIS_MODULE,
 	.llseek  = noop_llseek,
