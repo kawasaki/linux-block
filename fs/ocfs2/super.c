@@ -360,12 +360,14 @@ static int ocfs2_debug_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t ocfs2_debug_read(struct file *file, char __user *buf,
-				size_t nbytes, loff_t *ppos)
+static ssize_t ocfs2_debug_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	return simple_read_from_buffer(buf, nbytes, ppos, file->private_data,
-				       i_size_read(file->f_mapping->host));
+	struct file *file = iocb->ki_filp;
+
+	return simple_copy_to_iter(file->private_data, &iocb->ki_pos,
+				       i_size_read(file->f_mapping->host), to);
 }
+
 #else
 static int ocfs2_osb_debug_open(struct inode *inode, struct file *file)
 {
@@ -375,8 +377,7 @@ static int ocfs2_debug_release(struct inode *inode, struct file *file)
 {
 	return 0;
 }
-static ssize_t ocfs2_debug_read(struct file *file, char __user *buf,
-				size_t nbytes, loff_t *ppos)
+static ssize_t ocfs2_debug_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	return 0;
 }
@@ -385,7 +386,7 @@ static ssize_t ocfs2_debug_read(struct file *file, char __user *buf,
 static const struct file_operations ocfs2_osb_debug_fops = {
 	.open =		ocfs2_osb_debug_open,
 	.release =	ocfs2_debug_release,
-	.read =		ocfs2_debug_read,
+	.read_iter =	ocfs2_debug_read,
 	.llseek =	generic_file_llseek,
 };
 
