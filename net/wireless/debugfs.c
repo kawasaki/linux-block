@@ -12,19 +12,18 @@
 #include "debugfs.h"
 
 #define DEBUGFS_READONLY_FILE(name, buflen, fmt, value...)		\
-static ssize_t name## _read(struct file *file, char __user *userbuf,	\
-			    size_t count, loff_t *ppos)			\
+static ssize_t name## _read(struct kiocb *iocb, struct iov_iter *to)	\
 {									\
-	struct wiphy *wiphy = file->private_data;			\
+	struct wiphy *wiphy = iocb->ki_filp->private_data;		\
 	char buf[buflen];						\
 	int res;							\
 									\
 	res = scnprintf(buf, buflen, fmt "\n", ##value);		\
-	return simple_read_from_buffer(userbuf, count, ppos, buf, res);	\
+	return simple_copy_to_iter(buf, &iocb->ki_pos, res, to);	\
 }									\
 									\
 static const struct file_operations name## _ops = {			\
-	.read = name## _read,						\
+	.read_iter = name## _read,					\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
 }
@@ -60,11 +59,9 @@ static int ht_print_chan(struct ieee80211_channel *chan,
 				' ' : '+');
 }
 
-static ssize_t ht40allow_map_read(struct file *file,
-				  char __user *user_buf,
-				  size_t count, loff_t *ppos)
+static ssize_t ht40allow_map_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct wiphy *wiphy = file->private_data;
+	struct wiphy *wiphy = iocb->ki_filp->private_data;
 	char *buf;
 	unsigned int offset = 0, buf_size = PAGE_SIZE, i;
 	enum nl80211_band band;
@@ -84,15 +81,13 @@ static ssize_t ht40allow_map_read(struct file *file,
 						buf, buf_size, offset);
 	}
 
-	r = simple_read_from_buffer(user_buf, count, ppos, buf, offset);
-
+	r = simple_copy_to_iter(buf, &iocb->ki_pos, offset, to);
 	kfree(buf);
-
 	return r;
 }
 
 static const struct file_operations ht40allow_map_ops = {
-	.read = ht40allow_map_read,
+	.read_iter = ht40allow_map_read_iter,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
