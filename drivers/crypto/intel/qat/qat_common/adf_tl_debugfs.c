@@ -413,10 +413,10 @@ static int tl_control_show(struct seq_file *s, void *unused)
 	return 0;
 }
 
-static ssize_t tl_control_write(struct file *file, const char __user *userbuf,
-				size_t count, loff_t *ppos)
+static ssize_t tl_control_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *seq_f = file->private_data;
+	struct seq_file *seq_f = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct adf_accel_dev *accel_dev;
 	struct adf_telemetry *telemetry;
 	struct adf_tl_hw_data *tl_data;
@@ -434,7 +434,7 @@ static ssize_t tl_control_write(struct file *file, const char __user *userbuf,
 
 	mutex_lock(&telemetry->wr_lock);
 
-	ret = kstrtou32_from_user(userbuf, count, 10, &input);
+	ret = kstrtou32_from_iter(from, count, 10, &input);
 	if (ret)
 		goto unlock_and_exit;
 
@@ -627,10 +627,10 @@ static int tl_rp_data_show(struct seq_file *s, void *unused)
 	return tl_print_rp_data(accel_dev, s, rp_regs_index);
 }
 
-static ssize_t tl_rp_data_write(struct file *file, const char __user *userbuf,
-				size_t count, loff_t *ppos)
+static ssize_t tl_rp_data_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *seq_f = file->private_data;
+	struct seq_file *seq_f = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct adf_accel_dev *accel_dev;
 	struct adf_telemetry *telemetry;
 	unsigned int new_rp_num;
@@ -647,13 +647,13 @@ static ssize_t tl_rp_data_write(struct file *file, const char __user *userbuf,
 
 	mutex_lock(&telemetry->wr_lock);
 
-	ret = get_rp_index_from_file(file, &rp_regs_index, max_rp);
+	ret = get_rp_index_from_file(iocb->ki_filp, &rp_regs_index, max_rp);
 	if (ret) {
 		dev_dbg(&GET_DEV(accel_dev), "invalid RP data file name\n");
 		goto unlock_and_exit;
 	}
 
-	ret = kstrtou32_from_user(userbuf, count, 10, &new_rp_num);
+	ret = kstrtou32_from_iter(from, count, 10, &new_rp_num);
 	if (ret)
 		goto unlock_and_exit;
 
