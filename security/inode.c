@@ -340,15 +340,14 @@ EXPORT_SYMBOL_GPL(securityfs_recursive_remove);
 
 #ifdef CONFIG_SECURITY
 static struct dentry *lsm_dentry;
-static ssize_t lsm_read(struct file *filp, char __user *buf, size_t count,
-			loff_t *ppos)
+static ssize_t lsm_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	return simple_read_from_buffer(buf, count, ppos, lsm_names,
-		strlen(lsm_names));
+	return simple_copy_to_iter(lsm_names, &iocb->ki_pos, strlen(lsm_names),
+					to);
 }
 
 static const struct file_operations lsm_ops = {
-	.read = lsm_read,
+	.read_iter = lsm_read,
 	.llseek = generic_file_llseek,
 };
 #endif
