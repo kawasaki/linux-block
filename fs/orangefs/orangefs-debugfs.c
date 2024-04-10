@@ -74,15 +74,8 @@ static int help_show(struct seq_file *, void *);
 
 static int orangefs_debug_open(struct inode *, struct file *);
 
-static ssize_t orangefs_debug_read(struct file *,
-				 char __user *,
-				 size_t,
-				 loff_t *);
-
-static ssize_t orangefs_debug_write(struct file *,
-				  const char __user *,
-				  size_t,
-				  loff_t *);
+static ssize_t orangefs_debug_read(struct kiocb *iocb, struct iov_iter *to);
+static ssize_t orangefs_debug_write(struct kiocb *iocb, struct iov_iter *to);
 
 static int orangefs_prepare_cdm_array(char *);
 static void debug_mask_to_string(void *, int);
@@ -124,8 +117,8 @@ static const struct file_operations debug_help_fops = {
 static const struct file_operations kernel_debug_fops = {
 	.owner		= THIS_MODULE,
 	.open           = orangefs_debug_open,
-	.read           = orangefs_debug_read,
-	.write		= orangefs_debug_write,
+	.read_iter      = orangefs_debug_read,
+	.write_iter	= orangefs_debug_write,
 	.llseek         = generic_file_llseek,
 };
 
@@ -338,10 +331,7 @@ out:
 	return rc;
 }
 
-static ssize_t orangefs_debug_read(struct file *file,
-				 char __user *ubuf,
-				 size_t count,
-				 loff_t *ppos)
+static ssize_t orangefs_debug_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	char *buf;
 	int sprintf_ret;
@@ -354,10 +344,10 @@ static ssize_t orangefs_debug_read(struct file *file,
 		goto out;
 
 	mutex_lock(&orangefs_debug_lock);
-	sprintf_ret = sprintf(buf, "%s", (char *)file->private_data);
+	sprintf_ret = sprintf(buf, "%s", (char *)iocb->ki_filp->private_data);
 	mutex_unlock(&orangefs_debug_lock);
 
-	read_ret = simple_read_from_buffer(ubuf, count, ppos, buf, sprintf_ret);
+	read_ret = simple_copy_to_iter(buf, &iocb->ki_pos, sprintf_ret, to);
 
 	kfree(buf);
 
@@ -369,11 +359,9 @@ out:
 	return read_ret;
 }
 
-static ssize_t orangefs_debug_write(struct file *file,
-				  const char __user *ubuf,
-				  size_t count,
-				  loff_t *ppos)
+static ssize_t orangefs_debug_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	size_t count = iov_iter_count(from);
 	char *buf;
 	int rc = -EFAULT;
 	size_t silly = 0;
@@ -384,7 +372,7 @@ static ssize_t orangefs_debug_write(struct file *file,
 
 	gossip_debug(GOSSIP_DEBUGFS_DEBUG,
 		"orangefs_debug_write: %pD\n",
-		file);
+		iocb->ki_filp);
 
 	if (count == 0)
 		return 0;
@@ -402,7 +390,7 @@ static ssize_t orangefs_debug_write(struct file *file,
 	if (!buf)
 		goto out;
 
-	if (copy_from_user(buf, ubuf, count - 1)) {
+	if (!copy_from_iter_full(buf, count - 1, from)) {
 		gossip_debug(GOSSIP_DEBUGFS_DEBUG,
 			     "%s: copy_from_user failed!\n",
 			     __func__);
@@ -418,7 +406,7 @@ static ssize_t orangefs_debug_write(struct file *file,
 	 * A service operation is required to set a new client-side
 	 * debug mask.
 	 */
-	if (!strcmp(file->f_path.dentry->d_name.name,
+	if (!strcmp(iocb->ki_filp->f_path.dentry->d_name.name,
 		    ORANGEFS_KMOD_DEBUG_FILE)) {
 		debug_string_to_mask(buf, &orangefs_gossip_debug_mask, 0);
 		debug_mask_to_string(&orangefs_gossip_debug_mask, 0);
@@ -471,12 +459,12 @@ static ssize_t orangefs_debug_write(struct file *file,
 	}
 
 	mutex_lock(&orangefs_debug_lock);
-	s = file_inode(file)->i_private;
+	s = file_inode(iocb->ki_filp)->i_private;
 	memset(s, 0, ORANGEFS_MAX_DEBUG_STRING_LEN);
 	sprintf(s, "%s\n", debug_string);
 	mutex_unlock(&orangefs_debug_lock);
 
-	*ppos += count;
+	iocb->ki_pos += count;
 	if (silly)
 		rc = silly;
 	else
