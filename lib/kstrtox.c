@@ -438,15 +438,9 @@ int f(const char __user *s, size_t count, unsigned int base, type *res)	\
 EXPORT_SYMBOL(f)
 
 kstrto_from_user(kstrtoull_from_user,	kstrtoull,	unsigned long long);
-kstrto_from_user(kstrtoll_from_user,	kstrtoll,	long long);
 kstrto_from_user(kstrtoul_from_user,	kstrtoul,	unsigned long);
-kstrto_from_user(kstrtol_from_user,	kstrtol,	long);
-kstrto_from_user(kstrtouint_from_user,	kstrtouint,	unsigned int);
 kstrto_from_user(kstrtoint_from_user,	kstrtoint,	int);
-kstrto_from_user(kstrtou16_from_user,	kstrtou16,	u16);
-kstrto_from_user(kstrtos16_from_user,	kstrtos16,	s16);
 kstrto_from_user(kstrtou8_from_user,	kstrtou8,	u8);
-kstrto_from_user(kstrtos8_from_user,	kstrtos8,	s8);
 
 #define kstrto_from_iter(f, g, type)					\
 int f(struct iov_iter *s, size_t count, unsigned int base, type *res)	\
