@@ -98,6 +98,7 @@ static ssize_t snoop_file_read(struct file *file, char __user *buffer,
 
 	return copied;
 }
+FOPS_READ_ITER_HELPER(snoop_file_read);
 
 static __poll_t snoop_file_poll(struct file *file,
 				    struct poll_table_struct *pt)
@@ -110,7 +111,7 @@ static __poll_t snoop_file_poll(struct file *file,
 
 static const struct file_operations snoop_fops = {
 	.owner  = THIS_MODULE,
-	.read   = snoop_file_read,
+	.read_iter   = snoop_file_read_iter,
 	.poll   = snoop_file_poll,
 	.llseek = noop_llseek,
 };
