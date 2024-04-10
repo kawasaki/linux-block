@@ -48,9 +48,9 @@ void avs_dump_fw_log_wakeup(struct avs_dev *adev, const void __iomem *src, unsig
 	wake_up(&adev->trace_waitq);
 }
 
-static ssize_t fw_regs_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+static ssize_t fw_regs_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct avs_dev *adev = file->private_data;
+	struct avs_dev *adev = iocb->ki_filp->private_data;
 	char *buf;
 	int ret;
 
@@ -60,19 +60,19 @@ static ssize_t fw_regs_read(struct file *file, char __user *to, size_t count, lo
 
 	memcpy_fromio(buf, avs_sram_addr(adev, AVS_FW_REGS_WINDOW), AVS_FW_REGS_SIZE);
 
-	ret = simple_read_from_buffer(to, count, ppos, buf, AVS_FW_REGS_SIZE);
+	ret = simple_copy_to_iter(buf, &iocb->ki_pos, AVS_FW_REGS_SIZE, to);
 	kfree(buf);
 	return ret;
 }
 
 static const struct file_operations fw_regs_fops = {
 	.open = simple_open,
-	.read = fw_regs_read,
+	.read_iter = fw_regs_read,
 };
 
-static ssize_t debug_window_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+static ssize_t debug_window_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct avs_dev *adev = file->private_data;
+	struct avs_dev *adev = iocb->ki_filp->private_data;
 	size_t size;
 	char *buf;
 	int ret;
@@ -84,26 +84,26 @@ static ssize_t debug_window_read(struct file *file, char __user *to, size_t coun
 
 	memcpy_fromio(buf, avs_sram_addr(adev, AVS_DEBUG_WINDOW), size);
 
-	ret = simple_read_from_buffer(to, count, ppos, buf, size);
+	ret = simple_copy_to_iter(buf, &iocb->ki_pos, size, to);
 	kfree(buf);
 	return ret;
 }
 
 static const struct file_operations debug_window_fops = {
 	.open = simple_open,
-	.read = debug_window_read,
+	.read_iter = debug_window_read,
 };
 
-static ssize_t probe_points_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+static ssize_t probe_points_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct avs_dev *adev = file->private_data;
+	struct avs_dev *adev = iocb->ki_filp->private_data;
 	struct avs_probe_point_desc *desc;
 	size_t num_desc, len = 0;
 	char *buf;
 	int i, ret;
 
 	/* Prevent chaining, send and dump IPC value just once. */
-	if (*ppos)
+	if (iocb->ki_pos)
 		return 0;
 
 	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
@@ -125,7 +125,7 @@ static ssize_t probe_points_read(struct file *file, char __user *to, size_t coun
 		len += ret;
 	}
 
-	ret = simple_read_from_buffer(to, count, ppos, buf, len);
+	ret = simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 free_desc:
 	kfree(desc);
 exit:
@@ -133,16 +133,16 @@ exit:
 	return ret;
 }
 
-static ssize_t probe_points_write(struct file *file, const char __user *from, size_t count,
-				  loff_t *ppos)
+static ssize_t probe_points_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct avs_dev *adev = file->private_data;
+	struct avs_dev *adev = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct avs_probe_point_desc *desc;
 	u32 *array, num_elems;
 	size_t bytes;
 	int ret;
 
-	ret = parse_int_array_user(from, count, (int **)&array);
+	ret = parse_int_array_iter(from, (int **)&array);
 	if (ret < 0)
 		return ret;
 
@@ -166,20 +166,21 @@ exit:
 
 static const struct file_operations probe_points_fops = {
 	.open = simple_open,
-	.read = probe_points_read,
-	.write = probe_points_write,
+	.read_iter = probe_points_read,
+	.write_iter = probe_points_write,
 };
 
-static ssize_t probe_points_disconnect_write(struct file *file, const char __user *from,
-					     size_t count, loff_t *ppos)
+static ssize_t probe_points_disconnect_write(struct kiocb *iocb,
+					     struct iov_iter *from)
 {
-	struct avs_dev *adev = file->private_data;
+	struct avs_dev *adev = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	union avs_probe_point_id *id;
 	u32 *array, num_elems;
 	size_t bytes;
 	int ret;
 
-	ret = parse_int_array_user(from, count, (int **)&array);
+	ret = parse_int_array_iter(from, (int **)&array);
 	if (ret < 0)
 		return ret;
 
@@ -203,7 +204,7 @@ exit:
 
 static const struct file_operations probe_points_disconnect_fops = {
 	.open = simple_open,
-	.write = probe_points_disconnect_write,
+	.write_iter = probe_points_disconnect_write,
 	.llseek = default_llseek,
 };
 
@@ -227,6 +228,7 @@ static ssize_t strace_read(struct file *file, char __user *to, size_t count, lof
 	*ppos += copied;
 	return copied;
 }
+FOPS_READ_ITER_HELPER(strace_read);
 
 static int strace_open(struct inode *inode, struct file *file)
 {
@@ -276,7 +278,7 @@ static int strace_release(struct inode *inode, struct file *file)
 
 static const struct file_operations strace_fops = {
 	.llseek = default_llseek,
-	.read = strace_read,
+	.read_iter = strace_read_iter,
 	.open = strace_open,
 	.release = strace_release,
 };
@@ -348,26 +350,25 @@ static int disable_logs(struct avs_dev *adev, u32 resource_mask)
 	return ret;
 }
 
-static ssize_t trace_control_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+static ssize_t trace_control_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct avs_dev *adev = file->private_data;
+	struct avs_dev *adev = iocb->ki_filp->private_data;
 	char buf[64];
 	int len;
 
 	len = snprintf(buf, sizeof(buf), "0x%08x\n", adev->logged_resources);
-
-	return simple_read_from_buffer(to, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t trace_control_write(struct file *file, const char __user *from, size_t count,
-				   loff_t *ppos)
+static ssize_t trace_control_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct avs_dev *adev = file->private_data;
+	struct avs_dev *adev = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	u32 *array, num_elems;
 	u32 resource_mask;
 	int ret;
 
-	ret = parse_int_array_user(from, count, (int **)&array);
+	ret = parse_int_array_iter(from, (int **)&array);
 	if (ret < 0)
 		return ret;
 
@@ -400,8 +401,8 @@ free_array:
 
 static const struct file_operations trace_control_fops = {
 	.llseek = default_llseek,
-	.read = trace_control_read,
-	.write = trace_control_write,
+	.read_iter = trace_control_read,
+	.write_iter = trace_control_write,
 	.open = simple_open,
 };
 
