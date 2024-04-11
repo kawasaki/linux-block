@@ -677,10 +677,10 @@ static int mdc800_device_release (struct inode* inode, struct file *file)
 /*
  * The Device read callback Function
  */
-static ssize_t mdc800_device_read (struct file *file, char __user *buf, size_t len, loff_t *pos)
+static ssize_t mdc800_device_read(struct kiocb *iocb, struct iov_iter *to)
 {
+	size_t len = iov_iter_count(to);
 	size_t left=len, sts=len; /* single transfer size */
-	char __user *ptr = buf;
 	int retval;
 
 	mutex_lock(&mdc800->io_lock);
@@ -754,12 +754,11 @@ static ssize_t mdc800_device_read (struct file *file, char __user *buf, size_t l
 		else
 		{
 			/* Copy Bytes */
-			if (copy_to_user(ptr, &mdc800->out [mdc800->out_ptr],
-						sts)) {
+			if (!copy_to_iter_full(&mdc800->out [mdc800->out_ptr],
+						sts, to)) {
 				mutex_unlock(&mdc800->io_lock);
 				return -EFAULT;
 			}
-			ptr+=sts;
 			left-=sts;
 			mdc800->out_ptr+=sts;
 		}
@@ -936,7 +935,7 @@ static ssize_t mdc800_device_write (struct file *file, const char __user *buf, s
 	mutex_unlock(&mdc800->io_lock);
 	return i;
 }
-
+FOPS_WRITE_ITER_HELPER(mdc800_device_write);
 
 /***************************************************************************
 	Init and Cleanup this driver (Structs and types)
@@ -946,8 +945,8 @@ static ssize_t mdc800_device_write (struct file *file, const char __user *buf, s
 static const struct file_operations mdc800_device_ops =
 {
 	.owner =	THIS_MODULE,
-	.read =		mdc800_device_read,
-	.write =	mdc800_device_write,
+	.read_iter =	mdc800_device_read,
+	.write_iter =	mdc800_device_write_iter,
 	.open =		mdc800_device_open,
 	.release =	mdc800_device_release,
 	.llseek =	noop_llseek,
