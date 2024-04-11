@@ -1242,18 +1242,18 @@ out:
 	return ret;
 }
 
-static ssize_t pseudo_lock_measure_trigger(struct file *file,
-					   const char __user *user_buf,
-					   size_t count, loff_t *ppos)
+static ssize_t pseudo_lock_measure_trigger(struct kiocb *iocb,
+					   struct iov_iter *from)
 {
-	struct rdtgroup *rdtgrp = file->private_data;
+	struct rdtgroup *rdtgrp = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	size_t buf_size;
 	char buf[32];
 	int ret;
 	int sel;
 
 	buf_size = min(count, (sizeof(buf) - 1));
-	if (copy_from_user(buf, user_buf, buf_size))
+	if (!copy_from_iter_full(buf, buf_size, from))
 		return -EFAULT;
 
 	buf[buf_size] = '\0';
@@ -1261,20 +1261,20 @@ static ssize_t pseudo_lock_measure_trigger(struct file *file,
 	if (ret == 0) {
 		if (sel != 1 && sel != 2 && sel != 3)
 			return -EINVAL;
-		ret = debugfs_file_get(file->f_path.dentry);
+		ret = debugfs_file_get(iocb->ki_filp->f_path.dentry);
 		if (ret)
 			return ret;
 		ret = pseudo_lock_measure_cycles(rdtgrp, sel);
 		if (ret == 0)
 			ret = count;
-		debugfs_file_put(file->f_path.dentry);
+		debugfs_file_put(iocb->ki_filp->f_path.dentry);
 	}
 
 	return ret;
 }
 
 static const struct file_operations pseudo_measure_fops = {
-	.write = pseudo_lock_measure_trigger,
+	.write_iter = pseudo_lock_measure_trigger,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
@@ -1567,8 +1567,6 @@ static int pseudo_lock_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 
 static const struct file_operations pseudo_lock_dev_fops = {
 	.owner =	THIS_MODULE,
-	.read =		NULL,
-	.write =	NULL,
 	.open =		pseudo_lock_dev_open,
 	.release =	pseudo_lock_dev_release,
 	.mmap =		pseudo_lock_dev_mmap,
