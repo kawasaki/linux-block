@@ -365,17 +365,17 @@ static int dwc3_lsp_open(struct inode *inode, struct file *file)
 	return single_open(file, dwc3_lsp_show, inode->i_private);
 }
 
-static ssize_t dwc3_lsp_write(struct file *file, const char __user *ubuf,
-			      size_t count, loff_t *ppos)
+static ssize_t dwc3_lsp_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file		*s = file->private_data;
+	struct seq_file		*s = iocb->ki_filp->private_data;
+	size_t			count = iov_iter_count(from);
 	struct dwc3		*dwc = s->private;
 	unsigned long		flags;
 	char			buf[32] = { 0 };
 	u32			sel;
 	int			ret;
 
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(&buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	ret = kstrtouint(buf, 0, &sel);
@@ -391,8 +391,8 @@ static ssize_t dwc3_lsp_write(struct file *file, const char __user *ubuf,
 
 static const struct file_operations dwc3_lsp_fops = {
 	.open			= dwc3_lsp_open,
-	.write			= dwc3_lsp_write,
-	.read			= seq_read,
+	.write_iter		= dwc3_lsp_write,
+	.read_iter		= seq_read_iter,
 	.llseek			= seq_lseek,
 	.release		= single_release,
 };
@@ -436,15 +436,15 @@ static int dwc3_mode_open(struct inode *inode, struct file *file)
 	return single_open(file, dwc3_mode_show, inode->i_private);
 }
 
-static ssize_t dwc3_mode_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
+static ssize_t dwc3_mode_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file		*s = file->private_data;
+	struct seq_file		*s = iocb->ki_filp->private_data;
+	size_t			count = iov_iter_count(from);
 	struct dwc3		*dwc = s->private;
 	u32			mode = 0;
 	char			buf[32];
 
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(&buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	if (dwc->dr_mode != USB_DR_MODE_OTG)
@@ -466,8 +466,8 @@ static ssize_t dwc3_mode_write(struct file *file,
 
 static const struct file_operations dwc3_mode_fops = {
 	.open			= dwc3_mode_open,
-	.write			= dwc3_mode_write,
-	.read			= seq_read,
+	.write_iter		= dwc3_mode_write,
+	.read_iter		= seq_read_iter,
 	.llseek			= seq_lseek,
 	.release		= single_release,
 };
@@ -522,17 +522,17 @@ static int dwc3_testmode_open(struct inode *inode, struct file *file)
 	return single_open(file, dwc3_testmode_show, inode->i_private);
 }
 
-static ssize_t dwc3_testmode_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
+static ssize_t dwc3_testmode_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file		*s = file->private_data;
+	struct seq_file		*s = iocb->ki_filp->private_data;
+	size_t			count = iov_iter_count(from);
 	struct dwc3		*dwc = s->private;
 	unsigned long		flags;
 	u32			testmode = 0;
 	char			buf[32];
 	int			ret;
 
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(&buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	if (!strncmp(buf, "test_j", 6))
@@ -563,8 +563,8 @@ static ssize_t dwc3_testmode_write(struct file *file,
 
 static const struct file_operations dwc3_testmode_fops = {
 	.open			= dwc3_testmode_open,
-	.write			= dwc3_testmode_write,
-	.read			= seq_read,
+	.write_iter		= dwc3_testmode_write,
+	.read_iter		= seq_read_iter,
 	.llseek			= seq_lseek,
 	.release		= single_release,
 };
@@ -610,10 +610,10 @@ static int dwc3_link_state_open(struct inode *inode, struct file *file)
 	return single_open(file, dwc3_link_state_show, inode->i_private);
 }
 
-static ssize_t dwc3_link_state_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
+static ssize_t dwc3_link_state_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file		*s = file->private_data;
+	struct seq_file		*s = iocb->ki_filp->private_data;
+	size_t			count = iov_iter_count(from);
 	struct dwc3		*dwc = s->private;
 	unsigned long		flags;
 	enum dwc3_link_state	state = 0;
@@ -622,7 +622,7 @@ static ssize_t dwc3_link_state_write(struct file *file,
 	u8			speed;
 	int			ret;
 
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(&buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	if (!strncmp(buf, "SS.Disabled", 11))
@@ -672,8 +672,8 @@ static ssize_t dwc3_link_state_write(struct file *file,
 
 static const struct file_operations dwc3_link_state_fops = {
 	.open			= dwc3_link_state_open,
-	.write			= dwc3_link_state_write,
-	.read			= seq_read,
+	.write_iter		= dwc3_link_state_write,
+	.read_iter		= seq_read_iter,
 	.llseek			= seq_lseek,
 	.release		= single_release,
 };
