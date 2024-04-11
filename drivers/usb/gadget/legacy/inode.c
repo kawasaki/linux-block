@@ -1079,6 +1079,7 @@ done:
 	spin_unlock_irq (&dev->lock);
 	return retval;
 }
+FOPS_READ_ITER_HELPER(ep0_read);
 
 static struct usb_gadgetfs_event *
 next_event (struct dev_data *dev, enum usb_gadgetfs_event_type type)
@@ -1918,6 +1919,7 @@ fail:
 	dev->buf = NULL;
 	return value;
 }
+FOPS_WRITE_ITER_HELPER(dev_config);
 
 static int
 gadget_dev_open (struct inode *inode, struct file *fd)
@@ -1940,8 +1942,8 @@ gadget_dev_open (struct inode *inode, struct file *fd)
 static const struct file_operations ep0_operations = {
 
 	.open =		gadget_dev_open,
-	.read =		ep0_read,
-	.write =	dev_config,
+	.read_iter =	ep0_read_iter,
+	.write_iter =	dev_config_iter,
 	.fasync =	ep0_fasync,
 	.poll =		ep0_poll,
 	.unlocked_ioctl = gadget_dev_ioctl,
