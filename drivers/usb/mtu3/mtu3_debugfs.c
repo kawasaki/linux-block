@@ -272,7 +272,7 @@ static int mtu3_ep_open(struct inode *inode, struct file *file)
 
 static const struct file_operations mtu3_ep_fops = {
 	.open = mtu3_ep_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
@@ -311,18 +311,18 @@ static int mtu3_probe_open(struct inode *inode, struct file *file)
 	return single_open(file, mtu3_probe_show, inode->i_private);
 }
 
-static ssize_t mtu3_probe_write(struct file *file, const char __user *ubuf,
-				size_t count, loff_t *ppos)
+static ssize_t mtu3_probe_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	const char *file_name = file_dentry(file)->d_iname;
-	struct seq_file *sf = file->private_data;
+	const char *file_name = file_dentry(iocb->ki_filp)->d_iname;
+	struct seq_file *sf = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct mtu3 *mtu = sf->private;
 	const struct debugfs_reg32 *regs;
 	char buf[32];
 	u32 val;
 	int i;
 
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(&buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	if (kstrtou32(buf, 0, &val))
@@ -341,8 +341,8 @@ static ssize_t mtu3_probe_write(struct file *file, const char __user *ubuf,
 
 static const struct file_operations mtu3_probe_fops = {
 	.open = mtu3_probe_open,
-	.write = mtu3_probe_write,
-	.read = seq_read,
+	.write_iter = mtu3_probe_write,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
@@ -443,14 +443,14 @@ static int ssusb_mode_open(struct inode *inode, struct file *file)
 	return single_open(file, ssusb_mode_show, inode->i_private);
 }
 
-static ssize_t ssusb_mode_write(struct file *file, const char __user *ubuf,
-				size_t count, loff_t *ppos)
+static ssize_t ssusb_mode_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *sf = file->private_data;
+	struct seq_file *sf = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct ssusb_mtk *ssusb = sf->private;
 	char buf[16];
 
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(&buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	if (!strncmp(buf, "host", 4) && !ssusb->is_host) {
@@ -467,8 +467,8 @@ static ssize_t ssusb_mode_write(struct file *file, const char __user *ubuf,
 
 static const struct file_operations ssusb_mode_fops = {
 	.open = ssusb_mode_open,
-	.write = ssusb_mode_write,
-	.read = seq_read,
+	.write_iter = ssusb_mode_write,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
@@ -489,16 +489,16 @@ static int ssusb_vbus_open(struct inode *inode, struct file *file)
 	return single_open(file, ssusb_vbus_show, inode->i_private);
 }
 
-static ssize_t ssusb_vbus_write(struct file *file, const char __user *ubuf,
-				size_t count, loff_t *ppos)
+static ssize_t ssusb_vbus_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *sf = file->private_data;
+	struct seq_file *sf = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(from);
 	struct ssusb_mtk *ssusb = sf->private;
 	struct otg_switch_mtk *otg_sx = &ssusb->otg_switch;
 	char buf[16];
 	bool enable;
 
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+	if (!copy_from_iter_full(&buf, min_t(size_t, sizeof(buf) - 1, count), from))
 		return -EFAULT;
 
 	if (kstrtobool(buf, &enable)) {
@@ -513,8 +513,8 @@ static ssize_t ssusb_vbus_write(struct file *file, const char __user *ubuf,
 
 static const struct file_operations ssusb_vbus_fops = {
 	.open = ssusb_vbus_open,
-	.write = ssusb_vbus_write,
-	.read = seq_read,
+	.write_iter = ssusb_vbus_write,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
