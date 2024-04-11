@@ -405,9 +405,9 @@ static const struct vpd_blob *papr_vpd_retrieve(const struct papr_location_code 
 	return blob;
 }
 
-static ssize_t papr_vpd_handle_read(struct file *file, char __user *buf, size_t size, loff_t *off)
+static ssize_t papr_vpd_handle_read(struct kiocb *iocb, struct iov_iter *to)
 {
-	const struct vpd_blob *blob = file->private_data;
+	const struct vpd_blob *blob = iocb->ki_filp->private_data;
 
 	/* bug: we should not instantiate a handle without any data attached. */
 	if (!vpd_blob_has_data(blob)) {
@@ -415,7 +415,7 @@ static ssize_t papr_vpd_handle_read(struct file *file, char __user *buf, size_t 
 		return -EIO;
 	}
 
-	return simple_read_from_buffer(buf, size, off, blob->data, blob->len);
+	return simple_copy_to_iter(blob->data, &iocb->ki_pos, blob->len, to);
 }
 
 static int papr_vpd_handle_release(struct inode *inode, struct file *file)
@@ -436,7 +436,7 @@ static loff_t papr_vpd_handle_seek(struct file *file, loff_t off, int whence)
 
 
 static const struct file_operations papr_vpd_handle_ops = {
-	.read = papr_vpd_handle_read,
+	.read_iter = papr_vpd_handle_read,
 	.llseek = papr_vpd_handle_seek,
 	.release = papr_vpd_handle_release,
 };
