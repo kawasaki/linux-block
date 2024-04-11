@@ -499,6 +499,7 @@ exit:
 
 	return retval;
 }
+FOPS_READ_ITER_HELPER(adu_read);
 
 static ssize_t adu_write(struct file *file, const __user char *buffer,
 			 size_t count, loff_t *ppos)
@@ -619,12 +620,13 @@ exit_onqueue:
 	remove_wait_queue(&dev->write_wait, &waita);
 	return retval;
 }
+FOPS_WRITE_ITER_HELPER(adu_write);
 
 /* file operations needed when we register this driver */
 static const struct file_operations adu_fops = {
 	.owner = THIS_MODULE,
-	.read  = adu_read,
-	.write = adu_write,
+	.read_iter  = adu_read_iter,
+	.write_iter = adu_write_iter,
 	.open = adu_open,
 	.release = adu_release,
 	.llseek = noop_llseek,

@@ -332,6 +332,7 @@ static ssize_t iowarrior_read(struct file *file, char __user *buffer,
 	atomic_set(&dev->read_idx, read_idx);
 	return count;
 }
+FOPS_READ_ITER_HELPER(iowarrior_read);
 
 /*
  * iowarrior_write
@@ -468,6 +469,7 @@ exit:
 	mutex_unlock(&dev->mutex);
 	return retval;
 }
+FOPS_WRITE_ITER_HELPER(iowarrior_write);
 
 /*
  *	iowarrior_ioctl
@@ -707,8 +709,8 @@ static __poll_t iowarrior_poll(struct file *file, poll_table * wait)
  */
 static const struct file_operations iowarrior_fops = {
 	.owner = THIS_MODULE,
-	.write = iowarrior_write,
-	.read = iowarrior_read,
+	.write_iter = iowarrior_write_iter,
+	.read_iter = iowarrior_read_iter,
 	.unlocked_ioctl = iowarrior_ioctl,
 	.open = iowarrior_open,
 	.release = iowarrior_release,
