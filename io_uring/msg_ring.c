@@ -71,22 +71,6 @@ static inline bool io_msg_need_remote(struct io_ring_ctx *target_ctx)
 	return target_ctx->task_complete;
 }
 
-static int io_msg_exec_remote(struct io_kiocb *req, task_work_func_t func)
-{
-	struct io_ring_ctx *ctx = req->file->private_data;
-	struct io_msg *msg = io_kiocb_to_cmd(req, struct io_msg);
-	struct task_struct *task = READ_ONCE(ctx->submitter_task);
-
-	if (unlikely(!task))
-		return -EOWNERDEAD;
-
-	init_task_work(&msg->tw, func);
-	if (task_work_add(task, &msg->tw, TWA_SIGNAL))
-		return -EOWNERDEAD;
-
-	return IOU_ISSUE_SKIP_COMPLETE;
-}
-
 static struct io_overflow_cqe *io_alloc_overflow(struct io_ring_ctx *target_ctx)
 {
 	bool is_cqe32 = target_ctx->flags & IORING_SETUP_CQE32;
@@ -233,17 +217,38 @@ out_unlock:
 	return ret;
 }
 
-static void io_msg_tw_fd_complete(struct callback_head *head)
+static int io_msg_install_remote(struct io_kiocb *req, unsigned int issue_flags,
+				 struct io_ring_ctx *target_ctx)
 {
-	struct io_msg *msg = container_of(head, struct io_msg, tw);
-	struct io_kiocb *req = cmd_to_io_kiocb(msg);
-	int ret = -EOWNERDEAD;
+	struct io_msg *msg = io_kiocb_to_cmd(req, struct io_msg);
+	struct io_overflow_cqe *ocqe = NULL;
+	int ret;
 
-	if (!(current->flags & PF_EXITING))
-		ret = io_msg_install_complete(req, IO_URING_F_UNLOCKED);
-	if (ret < 0)
-		req_set_fail(req);
-	io_req_queue_tw_complete(req, ret);
+	if (!(msg->flags & IORING_MSG_RING_CQE_SKIP)) {
+		ocqe = io_alloc_overflow(target_ctx);
+		if (!ocqe)
+			return -ENOMEM;
+	}
+
+	if (unlikely(io_double_lock_ctx(target_ctx, issue_flags))) {
+		kfree(ocqe);
+		return -EAGAIN;
+	}
+
+	ret = __io_fixed_fd_install(target_ctx, msg->src_file, msg->dst_fd);
+	mutex_unlock(&target_ctx->uring_lock);
+
+	if (ret >= 0) {
+		msg->src_file = NULL;
+		req->flags &= ~REQ_F_NEED_CLEANUP;
+		if (ocqe) {
+			spin_lock(&target_ctx->completion_lock);
+			io_msg_add_overflow(msg, target_ctx, ocqe, ret, 0);
+			return 0;
+		}
+	}
+	kfree(ocqe);
+	return ret;
 }
 
 static int io_msg_send_fd(struct io_kiocb *req, unsigned int issue_flags)
@@ -268,7 +273,7 @@ static int io_msg_send_fd(struct io_kiocb *req, unsigned int issue_flags)
 	}
 
 	if (io_msg_need_remote(target_ctx))
-		return io_msg_exec_remote(req, io_msg_tw_fd_complete);
+		return io_msg_install_remote(req, issue_flags, target_ctx);
 	return io_msg_install_complete(req, issue_flags);
 }
 
