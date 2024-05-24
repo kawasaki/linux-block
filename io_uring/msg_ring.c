@@ -87,38 +87,68 @@ static int io_msg_exec_remote(struct io_kiocb *req, task_work_func_t func)
 	return IOU_ISSUE_SKIP_COMPLETE;
 }
 
-static void io_msg_tw_complete(struct callback_head *head)
+static struct io_overflow_cqe *io_alloc_overflow(struct io_ring_ctx *target_ctx)
 {
-	struct io_msg *msg = container_of(head, struct io_msg, tw);
-	struct io_kiocb *req = cmd_to_io_kiocb(msg);
-	struct io_ring_ctx *target_ctx = req->file->private_data;
-	int ret = 0;
+	bool is_cqe32 = target_ctx->flags & IORING_SETUP_CQE32;
+	size_t cqe_size = sizeof(struct io_overflow_cqe);
+	struct io_overflow_cqe *ocqe;
 
-	if (current->flags & PF_EXITING) {
-		ret = -EOWNERDEAD;
-	} else {
-		u32 flags = 0;
+	if (is_cqe32)
+		cqe_size += sizeof(struct io_uring_cqe);
 
-		if (msg->flags & IORING_MSG_RING_FLAGS_PASS)
-			flags = msg->cqe_flags;
+	ocqe = kmalloc(cqe_size, GFP_ATOMIC | __GFP_ACCOUNT);
+	if (!ocqe)
+		return NULL;
 
-		/*
-		 * If the target ring is using IOPOLL mode, then we need to be
-		 * holding the uring_lock for posting completions. Other ring
-		 * types rely on the regular completion locking, which is
-		 * handled while posting.
-		 */
-		if (target_ctx->flags & IORING_SETUP_IOPOLL)
-			mutex_lock(&target_ctx->uring_lock);
-		if (!io_post_aux_cqe(target_ctx, msg->user_data, msg->len, flags))
-			ret = -EOVERFLOW;
-		if (target_ctx->flags & IORING_SETUP_IOPOLL)
-			mutex_unlock(&target_ctx->uring_lock);
-	}
+	if (is_cqe32)
+		ocqe->cqe.big_cqe[0] = ocqe->cqe.big_cqe[1] = 0;
 
-	if (ret < 0)
-		req_set_fail(req);
-	io_req_queue_tw_complete(req, ret);
+	return ocqe;
+}
+
+/*
+ * Entered with the target uring_lock held, and will drop it before
+ * returning. Adds a previously allocated ocqe to the overflow list on
+ * the target, and marks it appropriately for flushing.
+ */
+static void io_msg_add_overflow(struct io_msg *msg,
+				struct io_ring_ctx *target_ctx,
+				struct io_overflow_cqe *ocqe, int ret,
+				u32 flags)
+	__releases(&target_ctx->completion_lock)
+{
+	unsigned nr_prev, nr_wait;
+
+	if (list_empty(&target_ctx->cq_overflow_list))
+		set_bit(IO_CHECK_CQ_OVERFLOW_BIT, &target_ctx->check_cq);
+
+	ocqe->cqe.user_data = msg->user_data;
+	ocqe->cqe.res = ret;
+	ocqe->cqe.flags = flags;
+	nr_prev = target_ctx->nr_overflow++;
+	target_ctx->cq_extra++;
+	list_add_tail(&ocqe->list, &target_ctx->cq_overflow_list);
+	spin_unlock(&target_ctx->completion_lock);
+
+	rcu_read_lock();
+	io_defer_tw_count(target_ctx, &nr_wait);
+	nr_prev += nr_wait;
+	io_defer_wake(target_ctx, nr_prev + 1, nr_prev);
+	rcu_read_unlock();
+}
+
+static int io_msg_fill_remote(struct io_msg *msg, unsigned int issue_flags,
+			      struct io_ring_ctx *target_ctx, u32 flags)
+{
+	struct io_overflow_cqe *ocqe;
+
+	ocqe = io_alloc_overflow(target_ctx);
+	if (!ocqe)
+		return -ENOMEM;
+
+	spin_lock(&target_ctx->completion_lock);
+	io_msg_add_overflow(msg, target_ctx, ocqe, msg->len, flags);
+	return 0;
 }
 
 static int io_msg_ring_data(struct io_kiocb *req, unsigned int issue_flags)
@@ -135,11 +165,11 @@ static int io_msg_ring_data(struct io_kiocb *req, unsigned int issue_flags)
 	if (target_ctx->flags & IORING_SETUP_R_DISABLED)
 		return -EBADFD;
 
-	if (io_msg_need_remote(target_ctx))
-		return io_msg_exec_remote(req, io_msg_tw_complete);
-
 	if (msg->flags & IORING_MSG_RING_FLAGS_PASS)
 		flags = msg->cqe_flags;
+
+	if (io_msg_need_remote(target_ctx))
+		return io_msg_fill_remote(msg, issue_flags, target_ctx, flags);
 
 	ret = -EOVERFLOW;
 	if (target_ctx->flags & IORING_SETUP_IOPOLL) {
