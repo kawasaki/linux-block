@@ -11,6 +11,7 @@
 #include "io_uring.h"
 #include "rsrc.h"
 #include "filetable.h"
+#include "alloc_cache.h"
 #include "msg_ring.h"
 
 
@@ -72,20 +73,28 @@ static inline bool io_msg_need_remote(struct io_ring_ctx *target_ctx)
 }
 
 static struct io_overflow_cqe *io_alloc_overflow(struct io_ring_ctx *target_ctx)
+	__acquires(&target_ctx->completion_lock)
 {
-	bool is_cqe32 = target_ctx->flags & IORING_SETUP_CQE32;
-	size_t cqe_size = sizeof(struct io_overflow_cqe);
 	struct io_overflow_cqe *ocqe;
 
-	if (is_cqe32)
-		cqe_size += sizeof(struct io_uring_cqe);
+	spin_lock(&target_ctx->completion_lock);
 
-	ocqe = kmalloc(cqe_size, GFP_ATOMIC | __GFP_ACCOUNT);
-	if (!ocqe)
-		return NULL;
+	ocqe = io_alloc_cache_get(&target_ctx->msg_cache);
+	if (!ocqe) {
+		bool is_cqe32 = target_ctx->flags & IORING_SETUP_CQE32;
+		size_t cqe_size = sizeof(struct io_overflow_cqe);
 
-	if (is_cqe32)
-		ocqe->cqe.big_cqe[0] = ocqe->cqe.big_cqe[1] = 0;
+		if (is_cqe32)
+			cqe_size += sizeof(struct io_uring_cqe);
+
+		ocqe = kmalloc(cqe_size, GFP_ATOMIC | __GFP_ACCOUNT);
+		if (!ocqe)
+			return NULL;
+
+		/* just init at alloc time, won't change */
+		if (is_cqe32)
+			ocqe->cqe.big_cqe[0] = ocqe->cqe.big_cqe[1] = 0;
+	}
 
 	return ocqe;
 }
@@ -127,12 +136,13 @@ static int io_msg_fill_remote(struct io_msg *msg, unsigned int issue_flags,
 	struct io_overflow_cqe *ocqe;
 
 	ocqe = io_alloc_overflow(target_ctx);
-	if (!ocqe)
-		return -ENOMEM;
+	if (ocqe) {
+		io_msg_add_overflow(msg, target_ctx, ocqe, msg->len, flags);
+		return 0;
+	}
 
-	spin_lock(&target_ctx->completion_lock);
-	io_msg_add_overflow(msg, target_ctx, ocqe, msg->len, flags);
-	return 0;
+	spin_unlock(&target_ctx->completion_lock);
+	return -ENOMEM;
 }
 
 static int io_msg_ring_data(struct io_kiocb *req, unsigned int issue_flags)
@@ -222,17 +232,17 @@ static int io_msg_install_remote(struct io_kiocb *req, unsigned int issue_flags,
 {
 	struct io_msg *msg = io_kiocb_to_cmd(req, struct io_msg);
 	struct io_overflow_cqe *ocqe = NULL;
-	int ret;
+	int ret = -ENOMEM;
+
+	if (unlikely(io_double_lock_ctx(target_ctx, issue_flags)))
+		return -EAGAIN;
 
 	if (!(msg->flags & IORING_MSG_RING_CQE_SKIP)) {
 		ocqe = io_alloc_overflow(target_ctx);
-		if (!ocqe)
-			return -ENOMEM;
-	}
-
-	if (unlikely(io_double_lock_ctx(target_ctx, issue_flags))) {
-		kfree(ocqe);
-		return -EAGAIN;
+		if (unlikely(!ocqe)) {
+			mutex_unlock(&target_ctx->uring_lock);
+			goto err;
+		}
 	}
 
 	ret = __io_fixed_fd_install(target_ctx, msg->src_file, msg->dst_fd);
@@ -242,12 +252,15 @@ static int io_msg_install_remote(struct io_kiocb *req, unsigned int issue_flags,
 		msg->src_file = NULL;
 		req->flags &= ~REQ_F_NEED_CLEANUP;
 		if (ocqe) {
-			spin_lock(&target_ctx->completion_lock);
 			io_msg_add_overflow(msg, target_ctx, ocqe, ret, 0);
 			return 0;
 		}
 	}
-	kfree(ocqe);
+	if (ocqe) {
+err:
+		spin_unlock(&target_ctx->completion_lock);
+		kfree(ocqe);
+	}
 	return ret;
 }
 
@@ -326,4 +339,19 @@ done:
 	}
 	io_req_set_res(req, ret, 0);
 	return IOU_OK;
+}
+
+int io_msg_cache_init(struct io_ring_ctx *ctx)
+{
+	size_t size = sizeof(struct io_overflow_cqe);
+
+	if (ctx->flags & IORING_SETUP_CQE32)
+		size += sizeof(struct io_uring_cqe);
+
+	return io_alloc_cache_init(&ctx->msg_cache, IO_ALLOC_CACHE_MAX, size);
+}
+
+void io_msg_cache_free(struct io_ring_ctx *ctx)
+{
+	io_alloc_cache_free(&ctx->msg_cache, kfree);
 }

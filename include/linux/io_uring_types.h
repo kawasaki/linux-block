@@ -350,6 +350,13 @@ struct io_ring_ctx {
 	struct io_alloc_cache	futex_cache;
 #endif
 
+	/*
+	 * Unlike the other caches, this one is used by the sender of messages
+	 * to this ring, not by the ring itself. As such, protection for this
+	 * cache is under ->completion_lock, not ->uring_lock.
+	 */
+	struct io_alloc_cache	msg_cache;
+
 	const struct cred	*sq_creds;	/* cred used for __io_sq_thread() */
 	struct io_sq_data	*sq_data;	/* if using sq thread polling */
 
