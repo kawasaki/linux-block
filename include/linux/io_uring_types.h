@@ -325,6 +325,7 @@ struct io_ring_ctx {
 		unsigned long		check_cq;
 		atomic_t		cq_wait_nr;
 		atomic_t		cq_timeouts;
+		int			nr_overflow;
 		struct wait_queue_head	cq_wait;
 	} ____cacheline_aligned_in_smp;
 

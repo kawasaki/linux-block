@@ -618,6 +618,7 @@ static void __io_cqring_overflow_flush(struct io_ring_ctx *ctx, bool dying)
 			memcpy(cqe, &ocqe->cqe, cqe_size);
 		}
 		list_del(&ocqe->list);
+		ctx->nr_overflow--;
 		kfree(ocqe);
 	}
 
@@ -724,6 +725,7 @@ static bool io_cqring_event_overflow(struct io_ring_ctx *ctx, u64 user_data,
 		ocqe->cqe.big_cqe[0] = extra1;
 		ocqe->cqe.big_cqe[1] = extra2;
 	}
+	ctx->nr_overflow++;
 	list_add_tail(&ocqe->list, &ctx->cq_overflow_list);
 	return true;
 }
