@@ -11,6 +11,7 @@
 #include "io-wq.h"
 #include "slist.h"
 #include "filetable.h"
+#include "eventfd.h"
 
 #ifndef CREATE_TRACE_POINTS
 #include <trace/events/io_uring.h>
@@ -443,5 +444,60 @@ static inline bool io_has_work(struct io_ring_ctx *ctx)
 {
 	return test_bit(IO_CHECK_CQ_OVERFLOW_BIT, &ctx->check_cq) ||
 	       !llist_empty(&ctx->work_llist);
+}
+
+/*
+ * Return first request nr_tw field. Only applicable for users of
+ * ctx->work_llist, which is DEFER_TASKRUN. Must be called with the RCU read
+ * lock held. Returns the current task_work count and head of list, if any.
+ */
+static inline struct llist_node *io_defer_tw_count(struct io_ring_ctx *ctx,
+						   unsigned *nr_tw_prev)
+{
+	struct llist_node *head = READ_ONCE(ctx->work_llist.first);
+
+	*nr_tw_prev = 0;
+	if (head) {
+		struct io_kiocb *first;
+
+		first = container_of(head, struct io_kiocb, io_task_work.node);
+		/*
+		 * Might be executed at any moment, rely on
+		 * SLAB_TYPESAFE_BY_RCU to keep it alive.
+		 */
+		*nr_tw_prev = READ_ONCE(first->nr_tw);
+	}
+
+	return head;
+}
+
+static inline void io_defer_wake(struct io_ring_ctx *ctx, unsigned nr_tw,
+				 unsigned nr_tw_prev)
+{
+	struct task_struct *task = READ_ONCE(ctx->submitter_task);
+	unsigned nr_wait;
+
+	/*
+	 * cmpxchg implies a full barrier, which pairs with the barrier
+	 * in set_current_state() on the io_cqring_wait() side. It's used
+	 * to ensure that either we see updated ->cq_wait_nr, or waiters
+	 * going to sleep will observe the work added to the list, which
+	 * is similar to the wait/wake task state sync.
+	 */
+	if (!nr_tw_prev) {
+		if (ctx->flags & IORING_SETUP_TASKRUN_FLAG)
+			atomic_or(IORING_SQ_TASKRUN, &ctx->rings->sq_flags);
+		if (ctx->has_evfd)
+			io_eventfd_signal(ctx);
+	}
+
+	nr_wait = atomic_read(&ctx->cq_wait_nr);
+	/* not enough or no one is waiting */
+	if (nr_tw < nr_wait)
+		return;
+	/* the previous add has already woken it up */
+	if (nr_tw_prev >= nr_wait)
+		return;
+	wake_up_state(task, TASK_INTERRUPTIBLE);
 }
 #endif

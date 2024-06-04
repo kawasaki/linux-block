@@ -1103,7 +1103,7 @@ void tctx_task_work(struct callback_head *cb)
 static inline void io_req_local_work_add(struct io_kiocb *req, unsigned flags)
 {
 	struct io_ring_ctx *ctx = req->ctx;
-	unsigned nr_wait, nr_tw, nr_tw_prev;
+	unsigned nr_tw, nr_tw_prev;
 	struct llist_node *head;
 
 	/* See comment above IO_CQ_WAKE_INIT */
@@ -1116,19 +1116,8 @@ static inline void io_req_local_work_add(struct io_kiocb *req, unsigned flags)
 	if (req->flags & (REQ_F_LINK | REQ_F_HARDLINK))
 		flags &= ~IOU_F_TWQ_LAZY_WAKE;
 
-	head = READ_ONCE(ctx->work_llist.first);
 	do {
-		nr_tw_prev = 0;
-		if (head) {
-			struct io_kiocb *first_req = container_of(head,
-							struct io_kiocb,
-							io_task_work.node);
-			/*
-			 * Might be executed at any moment, rely on
-			 * SLAB_TYPESAFE_BY_RCU to keep it alive.
-			 */
-			nr_tw_prev = READ_ONCE(first_req->nr_tw);
-		}
+		head = io_defer_tw_count(ctx, &nr_tw_prev);
 
 		/*
 		 * Theoretically, it can overflow, but that's fine as one of
@@ -1143,29 +1132,7 @@ static inline void io_req_local_work_add(struct io_kiocb *req, unsigned flags)
 	} while (!try_cmpxchg(&ctx->work_llist.first, &head,
 			      &req->io_task_work.node));
 
-	/*
-	 * cmpxchg implies a full barrier, which pairs with the barrier
-	 * in set_current_state() on the io_cqring_wait() side. It's used
-	 * to ensure that either we see updated ->cq_wait_nr, or waiters
-	 * going to sleep will observe the work added to the list, which
-	 * is similar to the wait/wawke task state sync.
-	 */
-
-	if (!head) {
-		if (ctx->flags & IORING_SETUP_TASKRUN_FLAG)
-			atomic_or(IORING_SQ_TASKRUN, &ctx->rings->sq_flags);
-		if (ctx->has_evfd)
-			io_eventfd_signal(ctx);
-	}
-
-	nr_wait = atomic_read(&ctx->cq_wait_nr);
-	/* not enough or no one is waiting */
-	if (nr_tw < nr_wait)
-		return;
-	/* the previous add has already woken it up */
-	if (nr_tw_prev >= nr_wait)
-		return;
-	wake_up_state(ctx->submitter_task, TASK_INTERRUPTIBLE);
+	io_defer_wake(ctx, nr_tw, nr_tw_prev);
 }
 
 static void io_req_normal_work_add(struct io_kiocb *req)
