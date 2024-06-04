@@ -2222,7 +2222,7 @@ __latent_entropy struct task_struct *copy_process(
 		goto fork_out;
 	p->flags &= ~PF_KTHREAD;
 	if (args->kthread)
-		p->flags |= PF_KTHREAD;
+		p->flags |= PF_KTHREAD | PF_NO_TASKWORK;
 	if (args->user_worker) {
 		/*
 		 * Mark us a user worker, and block any signal that isn't
