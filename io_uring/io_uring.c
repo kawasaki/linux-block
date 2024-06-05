@@ -1103,7 +1103,7 @@ void tctx_task_work(struct callback_head *cb)
 static inline void io_req_local_work_add(struct io_kiocb *req, unsigned flags)
 {
 	struct io_ring_ctx *ctx = req->ctx;
-	unsigned nr_tw, nr_tw_prev;
+	unsigned nr_tw, nr_tw_prev, nr_overflow;
 	struct llist_node *head;
 
 	/* See comment above IO_CQ_WAKE_INIT */
@@ -1132,6 +1132,11 @@ static inline void io_req_local_work_add(struct io_kiocb *req, unsigned flags)
 	} while (!try_cmpxchg(&ctx->work_llist.first, &head,
 			      &req->io_task_work.node));
 
+	nr_overflow = READ_ONCE(ctx->nr_overflow);
+	if (nr_overflow) {
+		nr_tw += nr_overflow;
+		nr_tw_prev += nr_overflow;
+	}
 	io_defer_wake(ctx, nr_tw, nr_tw_prev);
 }
 
