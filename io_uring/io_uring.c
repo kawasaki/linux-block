@@ -148,6 +148,7 @@ static bool io_uring_try_cancel_requests(struct io_ring_ctx *ctx,
 					 bool cancel_all);
 
 static void io_queue_sqe(struct io_kiocb *req);
+static void io_uring_flush_pending_submits(void);
 
 struct kmem_cache *req_cachep;
 static struct workqueue_struct *iou_wq __ro_after_init;
@@ -1531,6 +1532,9 @@ static int io_iopoll_check(struct io_ring_ctx *ctx, long min)
 	if (io_cqring_events(ctx))
 		return 0;
 
+	if (ctx->flags & IORING_SETUP_SCHED_SUBMIT)
+		io_uring_flush_pending_submits();
+
 	do {
 		int ret = 0;
 
@@ -2033,6 +2037,14 @@ static __cold int io_init_fail_req(struct io_kiocb *req, int err)
 	return err;
 }
 
+static inline bool io_uring_inline_issue(struct io_ring_ctx *ctx)
+{
+	if (!(ctx->flags & IORING_SETUP_SCHED_SUBMIT) ||
+	     (ctx->flags & IORING_SETUP_SQPOLL))
+		return true;
+	return false;
+}
+
 static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 		       const struct io_uring_sqe *sqe)
 	__must_hold(&ctx->uring_lock)
@@ -2103,7 +2115,7 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 		 * Plug now if we have more than 2 IO left after this, and the
 		 * target is potentially a read/write to block based storage.
 		 */
-		if (state->need_plug && def->plug) {
+		if (io_uring_inline_issue(ctx) && state->need_plug && def->plug) {
 			state->plug_started = true;
 			state->need_plug = false;
 			blk_start_plug_nr_ios(&state->plug, state->submit_nr);
@@ -3237,6 +3249,40 @@ void __io_uring_cancel(bool cancel_all)
 	io_uring_cancel_generic(cancel_all, NULL);
 }
 
+static void io_uring_submit_on_sched_sqpoll(struct io_uring_task *tctx)
+{
+	struct io_tctx_node *node;
+	unsigned long index;
+
+	tctx->sq_poll_iter = false;
+	xa_for_each_marked(&tctx->xa, index, node, XA_MARK_1) {
+		struct io_ring_ctx *ctx = node->ctx;
+		struct io_sq_data *sqd = ctx->sq_data;
+
+		xa_clear_mark(&tctx->xa, (unsigned long) ctx, XA_MARK_1);
+		if (io_sqring_entries(ctx) && wq_has_sleeper(&sqd->wait))
+			wake_up(&sqd->wait);
+	}
+}
+
+static void io_uring_flush_pending_submits(void)
+{
+	struct io_uring_task *tctx = current->io_uring;
+
+	if (tctx->sq_poll_iter)
+		io_uring_submit_on_sched_sqpoll(tctx);
+}
+
+/*
+ * Called on schedule out if the task has a ring that was setup with
+ * IORING_SETUP_SCHED_SUBMIT. Flushes pending submits.
+ */
+void __io_uring_submit_on_sched(struct io_uring_task *tctx)
+{
+	if (tctx->sq_poll_iter)
+		io_uring_submit_on_sched_sqpoll(tctx);
+}
+
 static int io_validate_ext_arg(unsigned flags, const void __user *argp, size_t argsz)
 {
 	if (flags & IORING_ENTER_EXT_ARG) {
@@ -3332,8 +3378,14 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 			ret = -EOWNERDEAD;
 			goto out;
 		}
-		if (flags & IORING_ENTER_SQ_WAKEUP)
+		if (ctx->flags & IORING_SETUP_SCHED_SUBMIT) {
+			struct io_uring_task *tctx = current->io_uring;
+
+			tctx->sq_poll_iter = true;
+			xa_set_mark(&tctx->xa, (unsigned long) ctx, XA_MARK_1);
+		} else if (flags & IORING_ENTER_SQ_WAKEUP) {
 			wake_up(&ctx->sq_data->wait);
+		}
 		if (flags & IORING_ENTER_SQ_WAIT)
 			io_sqpoll_wait_sq(ctx);
 
@@ -3742,7 +3794,7 @@ static long io_uring_setup(u32 entries, struct io_uring_params __user *params)
 			IORING_SETUP_SQE128 | IORING_SETUP_CQE32 |
 			IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN |
 			IORING_SETUP_NO_MMAP | IORING_SETUP_REGISTERED_FD_ONLY |
-			IORING_SETUP_NO_SQARRAY))
+			IORING_SETUP_NO_SQARRAY | IORING_SETUP_SCHED_SUBMIT))
 		return -EINVAL;
 
 	return io_uring_create(entries, &p, params);

@@ -83,20 +83,25 @@ struct io_hash_table {
 struct io_uring_task {
 	/* submission side */
 	int				cached_refs;
+	bool				sched_submit;
+	bool				sq_poll_iter;
 	const struct io_ring_ctx 	*last;
 	struct io_wq			*io_wq;
-	struct file			*registered_rings[IO_RINGFD_REG_MAX];
+
+	struct wait_queue_head		wait;
 
 	struct xarray			xa;
-	struct wait_queue_head		wait;
-	atomic_t			in_cancel;
-	atomic_t			inflight_tracked;
-	struct percpu_counter		inflight;
+
+	struct file			*registered_rings[IO_RINGFD_REG_MAX];
 
 	struct { /* task_work */
 		struct llist_head	task_list;
 		struct callback_head	task_work;
 	} ____cacheline_aligned_in_smp;
+
+	atomic_t			in_cancel;
+	atomic_t			inflight_tracked;
+	struct percpu_counter		inflight;
 };
 
 struct io_uring {
@@ -206,6 +211,7 @@ struct io_submit_state {
 	bool			need_plug;
 	bool			cq_flush;
 	unsigned short		submit_nr;
+	unsigned short		sched_plug_submit_nr;
 	struct blk_plug		plug;
 };
 

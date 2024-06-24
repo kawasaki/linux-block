@@ -341,10 +341,14 @@ static int io_sq_thread(void *data)
 		prepare_to_wait(&sqd->wait, &wait, TASK_INTERRUPTIBLE);
 		if (!io_sqd_events_pending(sqd) && !io_sq_tw_pending(retry_list)) {
 			bool needs_sched = true;
+			bool needs_ctx_flag_iter = false;
 
 			list_for_each_entry(ctx, &sqd->ctx_list, sqd_list) {
-				atomic_or(IORING_SQ_NEED_WAKEUP,
-						&ctx->rings->sq_flags);
+				if (!(ctx->flags & IORING_SETUP_SCHED_SUBMIT)) {
+					atomic_or(IORING_SQ_NEED_WAKEUP,
+							&ctx->rings->sq_flags);
+					needs_ctx_flag_iter = true;
+				}
 				if ((ctx->flags & IORING_SETUP_IOPOLL) &&
 				    !wq_list_empty(&ctx->iopoll_list)) {
 					needs_sched = false;
@@ -369,9 +373,11 @@ static int io_sq_thread(void *data)
 				mutex_lock(&sqd->lock);
 				sqd->sq_cpu = raw_smp_processor_id();
 			}
-			list_for_each_entry(ctx, &sqd->ctx_list, sqd_list)
-				atomic_andnot(IORING_SQ_NEED_WAKEUP,
-						&ctx->rings->sq_flags);
+			if (needs_ctx_flag_iter) {
+				list_for_each_entry(ctx, &sqd->ctx_list, sqd_list)
+					atomic_andnot(IORING_SQ_NEED_WAKEUP,
+							&ctx->rings->sq_flags);
+			}
 		}
 
 		finish_wait(&sqd->wait, &wait);

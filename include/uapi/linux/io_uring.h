@@ -200,6 +200,11 @@ enum io_uring_sqe_flags_bit {
  */
 #define IORING_SETUP_NO_SQARRAY		(1U << 16)
 
+/*
+ * Defer submission of requests until schedule out
+ */
+#define IORING_SETUP_SCHED_SUBMIT	(1U << 17)
+
 enum io_uring_op {
 	IORING_OP_NOP,
 	IORING_OP_READV,

@@ -81,6 +81,9 @@ __cold int io_uring_alloc_task_context(struct task_struct *task,
 		return ret;
 	}
 
+	if (ctx->flags & IORING_SETUP_SCHED_SUBMIT)
+		tctx->sched_submit = true;
+
 	xa_init(&tctx->xa);
 	init_waitqueue_head(&tctx->wait);
 	atomic_set(&tctx->in_cancel, 0);

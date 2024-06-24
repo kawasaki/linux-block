@@ -39,6 +39,7 @@
 #include <linux/sched/rt.h>
 
 #include <linux/blkdev.h>
+#include <linux/io_uring.h>
 #include <linux/context_tracking.h>
 #include <linux/cpuset.h>
 #include <linux/delayacct.h>
@@ -6707,6 +6708,14 @@ static inline void sched_submit_work(struct task_struct *tsk)
 {
 	static DEFINE_WAIT_OVERRIDE_MAP(sched_map, LD_WAIT_CONFIG);
 	unsigned int task_flags;
+
+	/*
+	 * The io_uring side will flush any pending requests, and may
+	 * grab eg a mutex. This should be fine even if it causes a single
+	 * recurse into schedule(), as any pending flushes will be cleared
+	 * before that happens.
+	 */
+	io_uring_submit_on_sched(tsk);
 
 	/*
 	 * Establish LD_WAIT_CONFIG context to ensure none of the code called
