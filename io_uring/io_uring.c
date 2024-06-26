@@ -148,7 +148,7 @@ static bool io_uring_try_cancel_requests(struct io_ring_ctx *ctx,
 					 bool cancel_all);
 
 static void io_queue_sqe(struct io_kiocb *req);
-static void io_uring_flush_pending_submits(void);
+static void io_uring_flush_pending_submits(struct io_ring_ctx *ctx);
 
 struct kmem_cache *req_cachep;
 static struct workqueue_struct *iou_wq __ro_after_init;
@@ -1533,7 +1533,7 @@ static int io_iopoll_check(struct io_ring_ctx *ctx, long min)
 		return 0;
 
 	if (ctx->flags & IORING_SETUP_SCHED_SUBMIT)
-		io_uring_flush_pending_submits();
+		io_uring_flush_pending_submits(ctx);
 
 	do {
 		int ret = 0;
@@ -2178,6 +2178,12 @@ static __cold int io_submit_fail_init(const struct io_uring_sqe *sqe,
 	return 0;
 }
 
+/*
+ * If we have this much queued before schedule, flush it out at submission
+ * time.
+ */
+#define IOU_MAX_DEFERRED	32
+
 static inline int io_submit_sqe(struct io_ring_ctx *ctx, struct io_kiocb *req,
 			 const struct io_uring_sqe *sqe)
 	__must_hold(&ctx->uring_lock)
@@ -2223,7 +2229,25 @@ fallback:
 		return 0;
 	}
 
-	io_queue_sqe(req);
+	if (io_uring_inline_issue(ctx)) {
+		io_queue_sqe(req);
+	} else {
+		struct io_uring_task *tctx = current->io_uring;
+
+		/*
+		 * If IORING_SETUP_SCHED_SUBMIT is set, after the request has
+		 * been prepared (and is stable in terms of potential user
+		 * data), stash it away in our task private submit list.
+		 * Once the task is scheduled out, we'll submit whatever was
+		 * deferred here. If we "plenty" stashed away already, flush
+		 * it out.
+		 */
+		wq_list_add_tail(&req->comp_list, &tctx->sched_submit_list);
+		ctx->submit_state.sched_plug_submit_nr++;
+		if (ctx->submit_state.sched_plug_submit_nr >= IOU_MAX_DEFERRED)
+			io_uring_flush_pending_submits(ctx);
+
+	}
 	return 0;
 }
 
@@ -3175,6 +3199,7 @@ __cold void io_uring_cancel_generic(bool cancel_all, struct io_sq_data *sqd)
 
 	if (!current->io_uring)
 		return;
+	__io_uring_submit_on_sched(tctx);
 	if (tctx->io_wq)
 		io_wq_exit_start(tctx->io_wq);
 
@@ -3265,12 +3290,84 @@ static void io_uring_submit_on_sched_sqpoll(struct io_uring_task *tctx)
 	}
 }
 
-static void io_uring_flush_pending_submits(void)
+static void io_uring_start_ctx_flush(struct io_ring_ctx *ctx)
+{
+	struct io_submit_state *state = &ctx->submit_state;
+
+	io_submit_state_start(state, state->sched_plug_submit_nr);
+	if (state->need_plug) {
+		blk_start_plug_nr_ios(&state->plug, state->sched_plug_submit_nr);
+		state->plug_started = true;
+		state->need_plug = false;
+	}
+	state->sched_plug_submit_nr = 0;
+}
+
+static void io_uring_swap_ctx(struct io_kiocb *req, struct io_ring_ctx **ctxp)
+{
+	struct io_ring_ctx *ctx = *ctxp;
+
+	if (ctx == req->ctx)
+		return;
+	if (ctx) {
+		io_submit_state_end(ctx);
+		mutex_unlock(&ctx->uring_lock);
+	}
+	*ctxp = ctx = req->ctx;
+	mutex_lock(&ctx->uring_lock);
+	io_uring_start_ctx_flush(ctx);
+}
+
+static void __io_uring_flush_pending_submits(struct io_wq_work_node *node,
+					     struct io_ring_ctx **cur_ctx)
+{
+	io_uring_start_ctx_flush(*cur_ctx);
+
+	while (node) {
+		struct io_wq_work_node *nxt = node->next;
+		struct io_kiocb *req;
+
+		req = container_of(node, struct io_kiocb, comp_list);
+		io_uring_swap_ctx(req, cur_ctx);
+		trace_io_uring_sched_submit(req);
+		node->next = NULL;
+		io_queue_sqe(req);
+		node = nxt;
+	}
+	io_submit_state_end(*cur_ctx);
+}
+
+static void io_uring_flush_pending_submits(struct io_ring_ctx *ctx)
 {
 	struct io_uring_task *tctx = current->io_uring;
+	struct io_wq_work_node *node = tctx->sched_submit_list.first;
 
+	if (node) {
+		struct io_ring_ctx *org_ctx = ctx;
+
+		INIT_WQ_LIST(&tctx->sched_submit_list);
+		__io_uring_flush_pending_submits(node, &ctx);
+		if (ctx != org_ctx) {
+			mutex_unlock(&ctx->uring_lock);
+			mutex_lock(&org_ctx->uring_lock);
+		}
+	}
 	if (tctx->sq_poll_iter)
 		io_uring_submit_on_sched_sqpoll(tctx);
+}
+
+static void io_uring_sched_submit(struct io_wq_work_node *node)
+{
+	struct io_ring_ctx *ctx;
+	struct io_kiocb *req;
+
+	__set_current_state(TASK_RUNNING);
+
+	req = container_of(node, struct io_kiocb, comp_list);
+	ctx = req->ctx;
+	mutex_lock(&ctx->uring_lock);
+	__io_uring_flush_pending_submits(node, &ctx);
+	mutex_unlock(&ctx->uring_lock);
 }
 
 /*
@@ -3279,6 +3376,12 @@ static void io_uring_flush_pending_submits(void)
  */
 void __io_uring_submit_on_sched(struct io_uring_task *tctx)
 {
+	struct io_wq_work_node *node = tctx->sched_submit_list.first;
+
+	if (node) {
+		INIT_WQ_LIST(&tctx->sched_submit_list);
+		io_uring_sched_submit(node);
+	}
 	if (tctx->sq_poll_iter)
 		io_uring_submit_on_sched_sqpoll(tctx);
 }

@@ -89,6 +89,7 @@ struct io_uring_task {
 	struct io_wq			*io_wq;
 
 	struct wait_queue_head		wait;
+	struct io_wq_work_list		sched_submit_list;
 
 	struct xarray			xa;
 

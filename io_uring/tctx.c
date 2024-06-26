@@ -51,6 +51,7 @@ void __io_uring_free(struct task_struct *tsk)
 	WARN_ON_ONCE(!xa_empty(&tctx->xa));
 	WARN_ON_ONCE(tctx->io_wq);
 	WARN_ON_ONCE(tctx->cached_refs);
+	WARN_ON_ONCE(!wq_list_empty(&tctx->sched_submit_list));
 
 	percpu_counter_destroy(&tctx->inflight);
 	kfree(tctx);
@@ -84,6 +85,7 @@ __cold int io_uring_alloc_task_context(struct task_struct *task,
 	if (ctx->flags & IORING_SETUP_SCHED_SUBMIT)
 		tctx->sched_submit = true;
 
+	INIT_WQ_LIST(&tctx->sched_submit_list);
 	xa_init(&tctx->xa);
 	init_waitqueue_head(&tctx->wait);
 	atomic_set(&tctx->in_cancel, 0);

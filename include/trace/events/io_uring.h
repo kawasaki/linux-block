@@ -401,6 +401,34 @@ TRACE_EVENT(io_uring_submit_req,
 		  __entry->sq_thread)
 );
 
+/**
+ * io_uring_sched_submit - called on schedule out submit
+ *
+ * @req:		pointer to a submitted request
+ *
+ */
+TRACE_EVENT(io_uring_sched_submit,
+
+	TP_PROTO(struct io_kiocb *req),
+
+	TP_ARGS(req),
+
+	TP_STRUCT__entry (
+		__field(  void *,		ctx		)
+		__field(  void *,		req		)
+		__field(  unsigned long long,	user_data	)
+	),
+
+	TP_fast_assign(
+		__entry->ctx		= req->ctx;
+		__entry->req		= req;
+		__entry->user_data	= req->cqe.user_data;
+	),
+
+	TP_printk("ring %p, req %p, user_data 0x%llx",
+		  __entry->ctx, __entry->req, __entry->user_data)
+);
+
 /*
  * io_uring_poll_arm - called after arming a poll wait if successful
  *
