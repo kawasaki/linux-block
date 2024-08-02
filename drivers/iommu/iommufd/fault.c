@@ -237,11 +237,11 @@ static void iommufd_compose_fault_message(struct iommu_fault *fault,
 	hwpt_fault->cookie = cookie;
 }
 
-static ssize_t iommufd_fault_fops_read(struct file *filep, char __user *buf,
-				       size_t count, loff_t *ppos)
+static ssize_t iommufd_fault_fops_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	size_t fault_size = sizeof(struct iommu_hwpt_pgfault);
-	struct iommufd_fault *fault = filep->private_data;
+	struct iommufd_fault *fault = iocb->ki_filp->private_data;
+	size_t count = iov_iter_count(to);
 	struct iommu_hwpt_pgfault data;
 	struct iommufd_device *idev;
 	struct iopf_group *group;
@@ -249,7 +249,7 @@ static ssize_t iommufd_fault_fops_read(struct file *filep, char __user *buf,
 	size_t done = 0;
 	int rc = 0;
 
-	if (*ppos || count % fault_size)
+	if (iocb->ki_pos || count % fault_size)
 		return -ESPIPE;
 
 	mutex_lock(&fault->mutex);
@@ -270,7 +270,7 @@ static ssize_t iommufd_fault_fops_read(struct file *filep, char __user *buf,
 			iommufd_compose_fault_message(&iopf->fault,
 						      &data, idev,
 						      group->cookie);
-			if (copy_to_user(buf + done, &data, fault_size)) {
+			if (!copy_to_iter_full(&data, fault_size, to)) {
 				xa_erase(&fault->response, group->cookie);
 				rc = -EFAULT;
 				break;
@@ -285,22 +285,23 @@ static ssize_t iommufd_fault_fops_read(struct file *filep, char __user *buf,
 	return done == 0 ? rc : done;
 }
 
-static ssize_t iommufd_fault_fops_write(struct file *filep, const char __user *buf,
-					size_t count, loff_t *ppos)
+static ssize_t iommufd_fault_fops_write(struct kiocb *iocb,
+					struct iov_iter *from)
 {
 	size_t response_size = sizeof(struct iommu_hwpt_page_response);
-	struct iommufd_fault *fault = filep->private_data;
+	struct iommufd_fault *fault = iocb->ki_filp->private_data;
 	struct iommu_hwpt_page_response response;
+	size_t count = iov_iter_count(from);
 	struct iopf_group *group;
 	size_t done = 0;
 	int rc = 0;
 
-	if (*ppos || count % response_size)
+	if (iocb->ki_pos || count % response_size)
 		return -ESPIPE;
 
 	mutex_lock(&fault->mutex);
 	while (count > done) {
-		rc = copy_from_user(&response, buf + done, response_size);
+		rc = !copy_from_iter_full(&response, response_size, from);
 		if (rc)
 			break;
 
@@ -356,8 +357,8 @@ static int iommufd_fault_fops_release(struct inode *inode, struct file *filep)
 static const struct file_operations iommufd_fault_fops = {
 	.owner		= THIS_MODULE,
 	.open		= nonseekable_open,
-	.read		= iommufd_fault_fops_read,
-	.write		= iommufd_fault_fops_write,
+	.read_iter	= iommufd_fault_fops_read,
+	.write_iter	= iommufd_fault_fops_write,
 	.poll		= iommufd_fault_fops_poll,
 	.release	= iommufd_fault_fops_release,
 };
