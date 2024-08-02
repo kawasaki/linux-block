@@ -314,13 +314,14 @@ static const struct {
 	{ "resume", xe_gt_sriov_pf_control_resume_vf },
 };
 
-static ssize_t control_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
+static ssize_t control_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct dentry *dent = file_dentry(file);
+	struct dentry *dent = file_dentry(iocb->ki_filp);
 	struct dentry *parent = dent->d_parent;
 	struct xe_gt *gt = extract_gt(parent);
 	struct xe_device *xe = gt_to_xe(gt);
 	unsigned int vfid = extract_vfid(parent);
+	size_t count = iov_iter_count(from);
 	int ret = -EINVAL;
 	char cmd[32];
 	size_t n;
@@ -328,13 +329,13 @@ static ssize_t control_write(struct file *file, const char __user *buf, size_t c
 	xe_gt_assert(gt, vfid);
 	xe_gt_sriov_pf_assert_vfid(gt, vfid);
 
-	if (*pos)
+	if (iocb->ki_pos)
 		return -ESPIPE;
 
 	if (count > sizeof(cmd) - 1)
 		return -EINVAL;
 
-	ret = simple_write_to_buffer(cmd, sizeof(cmd) - 1, pos, buf, count);
+	ret = simple_copy_from_iter(cmd, &iocb->ki_pos, sizeof(cmd) - 1, from);
 	if (ret < 0)
 		return ret;
 	cmd[ret] = '\0';
@@ -353,7 +354,7 @@ static ssize_t control_write(struct file *file, const char __user *buf, size_t c
 	return (ret < 0) ? ret : count;
 }
 
-static ssize_t control_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
+static ssize_t control_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	char help[128];
 	size_t n;
@@ -364,14 +365,14 @@ static ssize_t control_read(struct file *file, char __user *buf, size_t count, l
 		strlcat(help, "\n", sizeof(help));
 	}
 
-	return simple_read_from_buffer(buf, count, ppos, help, strlen(help));
+	return simple_copy_to_iter(help, &iocb->ki_pos, strlen(help), to);
 }
 
 static const struct file_operations control_ops = {
 	.owner		= THIS_MODULE,
 	.open		= simple_open,
-	.write		= control_write,
-	.read		= control_read,
+	.write_iter	= control_write,
+	.read_iter	= control_read,
 	.llseek		= default_llseek,
 };
 

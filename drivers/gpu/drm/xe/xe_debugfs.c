@@ -118,28 +118,27 @@ static const struct file_operations forcewake_all_fops = {
 	.release = forcewake_release,
 };
 
-static ssize_t wedged_mode_show(struct file *f, char __user *ubuf,
-				size_t size, loff_t *pos)
+static ssize_t wedged_mode_show(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct xe_device *xe = file_inode(f)->i_private;
+	struct xe_device *xe = file_inode(iocb->ki_filp)->i_private;
 	char buf[32];
 	int len = 0;
 
 	len = scnprintf(buf, sizeof(buf), "%d\n", xe->wedged.mode);
 
-	return simple_read_from_buffer(ubuf, size, pos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t wedged_mode_set(struct file *f, const char __user *ubuf,
-			       size_t size, loff_t *pos)
+static ssize_t wedged_mode_set(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct xe_device *xe = file_inode(f)->i_private;
+	struct xe_device *xe = file_inode(iocb->ki_filp)->i_private;
+	size_t size = iov_iter_count(from);
 	struct xe_gt *gt;
 	u32 wedged_mode;
 	ssize_t ret;
 	u8 id;
 
-	ret = kstrtouint_from_user(ubuf, size, 0, &wedged_mode);
+	ret = kstrtouint_from_iter(from, size, 0, &wedged_mode);
 	if (ret)
 		return ret;
 
@@ -166,8 +165,8 @@ static ssize_t wedged_mode_set(struct file *f, const char __user *ubuf,
 
 static const struct file_operations wedged_mode_fops = {
 	.owner = THIS_MODULE,
-	.read = wedged_mode_show,
-	.write = wedged_mode_set,
+	.read_iter = wedged_mode_show,
+	.write_iter = wedged_mode_set,
 };
 
 void xe_debugfs_register(struct xe_device *xe)
