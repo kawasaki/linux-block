@@ -1618,11 +1618,9 @@ exit:
 	rcu_read_unlock();
 }
 
-static ssize_t ath12k_read_htt_stats_type(struct file *file,
-					  char __user *user_buf,
-					  size_t count, loff_t *ppos)
+static ssize_t ath12k_read_htt_stats_type(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct ath12k *ar = file->private_data;
+	struct ath12k *ar = iocb->ki_filp->private_data;
 	enum ath12k_dbg_htt_ext_stats_type type;
 	char buf[32];
 	size_t len;
@@ -1633,15 +1631,15 @@ static ssize_t ath12k_read_htt_stats_type(struct file *file,
 
 	len = scnprintf(buf, sizeof(buf), "%u\n", type);
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, len, to);
 }
 
-static ssize_t ath12k_write_htt_stats_type(struct file *file,
-					   const char __user *user_buf,
-					   size_t count, loff_t *ppos)
+static ssize_t ath12k_write_htt_stats_type(struct kiocb *iocb,
+					   struct iov_iter *from)
 {
-	struct ath12k *ar = file->private_data;
+	struct ath12k *ar = iocb->ki_filp->private_data;
 	enum ath12k_dbg_htt_ext_stats_type type;
+	size_t count = iov_iter_count(from);
 	unsigned int cfg_param[4] = {0};
 	const int size = 32;
 	int num_args;
@@ -1650,7 +1648,7 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	num_args = sscanf(buf, "%u %u %u %u %u\n", &type, &cfg_param[0],
@@ -1676,8 +1674,8 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 }
 
 static const struct file_operations fops_htt_stats_type = {
-	.read = ath12k_read_htt_stats_type,
-	.write = ath12k_write_htt_stats_type,
+	.read_iter = ath12k_read_htt_stats_type,
+	.write_iter = ath12k_write_htt_stats_type,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -1801,38 +1799,36 @@ static int ath12k_release_htt_stats(struct inode *inode,
 	return 0;
 }
 
-static ssize_t ath12k_read_htt_stats(struct file *file,
-				     char __user *user_buf,
-				     size_t count, loff_t *ppos)
+static ssize_t ath12k_read_htt_stats(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct debug_htt_stats_req *stats_req = file->private_data;
+	struct debug_htt_stats_req *stats_req = iocb->ki_filp->private_data;
 	char *buf;
 	u32 length;
 
 	buf = stats_req->buf;
 	length = min_t(u32, stats_req->buf_len, ATH12K_HTT_STATS_BUF_SIZE);
-	return simple_read_from_buffer(user_buf, count, ppos, buf, length);
+	return simple_copy_to_iter(buf, &iocb->ki_pos, length, to);
 }
 
 static const struct file_operations fops_dump_htt_stats = {
 	.open = ath12k_open_htt_stats,
 	.release = ath12k_release_htt_stats,
-	.read = ath12k_read_htt_stats,
+	.read_iter = ath12k_read_htt_stats,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
-static ssize_t ath12k_write_htt_stats_reset(struct file *file,
-					    const char __user *user_buf,
-					    size_t count, loff_t *ppos)
+static ssize_t ath12k_write_htt_stats_reset(struct kiocb *iocb,
+					    struct iov_iter *from)
 {
-	struct ath12k *ar = file->private_data;
+	struct ath12k *ar = iocb->ki_filp->private_data;
 	enum ath12k_dbg_htt_ext_stats_type type;
 	struct htt_ext_stats_cfg_params cfg_params = { 0 };
+	size_t count = iov_iter_count(from);
 	u8 param_pos;
 	int ret;
 
-	ret = kstrtou32_from_user(user_buf, count, 0, &type);
+	ret = kstrtou32_from_iter(from, count, 0, &type);
 	if (ret)
 		return ret;
 
@@ -1877,7 +1873,7 @@ static ssize_t ath12k_write_htt_stats_reset(struct file *file,
 }
 
 static const struct file_operations fops_htt_stats_reset = {
-	.write = ath12k_write_htt_stats_reset,
+	.write_iter = ath12k_write_htt_stats_reset,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
