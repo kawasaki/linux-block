@@ -676,18 +676,18 @@ static int pinmux_select_show(struct seq_file *s, void *unused)
 	return -EPERM;
 }
 
-static ssize_t pinmux_select_write(struct file *file, const char __user *user_buf,
-				   size_t len, loff_t *ppos)
+static ssize_t pinmux_select_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct seq_file *sfile = file->private_data;
+	struct seq_file *sfile = iocb->ki_filp->private_data;
 	struct pinctrl_dev *pctldev = sfile->private;
 	const struct pinmux_ops *pmxops = pctldev->desc->pmxops;
+	size_t len = iov_iter_count(from);
 	const char *const *groups;
 	char *buf, *gname, *fname;
 	unsigned int num_groups;
 	int fsel, gsel, ret;
 
-	buf = memdup_user_nul(user_buf, len);
+	buf = iterdup_nul(from, len);
 	if (IS_ERR(buf))
 		return PTR_ERR(buf);
 
