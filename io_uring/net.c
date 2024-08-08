@@ -457,8 +457,9 @@ static void io_req_msg_cleanup(struct io_kiocb *req,
  * data in the iter, then loop the segments to figure out how much we
  * transferred.
  */
-static int io_bundle_nbufs(struct io_async_msghdr *kmsg, int ret)
+static int io_bundle_nbufs(struct io_kiocb *req, int ret)
 {
+	struct io_async_msghdr *kmsg = req->async_data;
 	struct iovec *iov;
 	int nbufs;
 
@@ -501,7 +502,7 @@ static inline bool io_send_finish(struct io_kiocb *req, int *ret,
 		goto finish;
 	}
 
-	cflags = io_put_kbufs(req, *ret, io_bundle_nbufs(kmsg, *ret), issue_flags);
+	cflags = io_put_kbufs(req, *ret, io_bundle_nbufs(req, *ret), issue_flags);
 
 	if (bundle_finished || req->flags & REQ_F_BL_EMPTY)
 		goto finish;
@@ -842,7 +843,7 @@ static inline bool io_recv_finish(struct io_kiocb *req, int *ret,
 		cflags |= IORING_CQE_F_SOCK_NONEMPTY;
 
 	if (sr->flags & IORING_RECVSEND_BUNDLE) {
-		cflags |= io_put_kbufs(req, *ret, io_bundle_nbufs(kmsg, *ret),
+		cflags |= io_put_kbufs(req, *ret, io_bundle_nbufs(req, *ret),
 				      issue_flags);
 		/* bundle with no more immediate buffers, we're done */
 		if (req->flags & REQ_F_BL_EMPTY)
