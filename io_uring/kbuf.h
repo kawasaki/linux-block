@@ -61,8 +61,11 @@ struct buf_sel_arg {
 	size_t max_len;
 	unsigned short nr_iovs;
 	unsigned short mode;
+	unsigned short nsegs;
+	bool coalesce;
 };
 
+int io_buffer_segments(struct io_kiocb *req, int nbytes);
 void __user *io_buffer_select(struct io_kiocb *req, size_t *len,
 			      unsigned int issue_flags);
 int io_buffers_select(struct io_kiocb *req, struct buf_sel_arg *arg,

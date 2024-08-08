@@ -9,6 +9,7 @@ struct io_async_msghdr {
 	/* points to an allocated iov, if NULL we use fast_iov instead */
 	struct iovec			*free_iov;
 	int				free_iov_nr;
+	int				nbufs;
 	int				namelen;
 	__kernel_size_t			controllen;
 	__kernel_size_t			payloadlen;

@@ -460,33 +460,16 @@ static void io_req_msg_cleanup(struct io_kiocb *req,
 static int io_bundle_nbufs(struct io_kiocb *req, int ret)
 {
 	struct io_async_msghdr *kmsg = req->async_data;
-	struct iovec *iov;
-	int nbufs;
 
-	/* no data is always zero segments, and a ubuf is always 1 segment */
+	/* no data is always zero segments */
 	if (ret <= 0)
 		return 0;
-	if (iter_is_ubuf(&kmsg->msg.msg_iter))
-		return 1;
-
-	iov = kmsg->free_iov;
-	if (!iov)
-		iov = &kmsg->fast_iov;
-
-	/* if all data was transferred, it's basic pointer math */
+	/* if all data was transferred, we already know the number of buffers */
 	if (!iov_iter_count(&kmsg->msg.msg_iter))
-		return iter_iov(&kmsg->msg.msg_iter) - iov;
+		return kmsg->nbufs;
 
-	/* short transfer, count segments */
-	nbufs = 0;
-	do {
-		int this_len = min_t(int, iov[nbufs].iov_len, ret);
-
-		nbufs++;
-		ret -= this_len;
-	} while (ret);
-
-	return nbufs;
+	/* short transfer, iterate buffers to find number of segments */
+	return io_buffer_segments(req, ret);
 }
 
 static inline bool io_send_finish(struct io_kiocb *req, int *ret,
@@ -600,6 +583,7 @@ retry_bundle:
 			.iovs = &kmsg->fast_iov,
 			.max_len = min_not_zero(sr->len, INT_MAX),
 			.nr_iovs = 1,
+			.coalesce = !(issue_flags & IO_URING_F_UNLOCKED),
 		};
 
 		if (kmsg->free_iov) {
@@ -623,6 +607,7 @@ retry_bundle:
 			req->flags |= REQ_F_NEED_CLEANUP;
 		}
 		sr->len = arg.out_len;
+		kmsg->nbufs = arg.nsegs;
 
 		if (ret == 1) {
 			sr->buf = arg.iovs[0].iov_base;
@@ -1078,6 +1063,7 @@ static int io_recv_buf_select(struct io_kiocb *req, struct io_async_msghdr *kmsg
 			.iovs = &kmsg->fast_iov,
 			.nr_iovs = 1,
 			.mode = KBUF_MODE_EXPAND,
+			.coalesce = true,
 		};
 
 		if (kmsg->free_iov) {
@@ -1093,7 +1079,18 @@ static int io_recv_buf_select(struct io_kiocb *req, struct io_async_msghdr *kmsg
 		if (unlikely(ret < 0))
 			return ret;
 
-		/* special case 1 vec, can be a fast path */
+		if (arg.iovs != &kmsg->fast_iov && arg.iovs != kmsg->free_iov) {
+			kmsg->free_iov_nr = arg.nsegs;
+			kmsg->free_iov = arg.iovs;
+			req->flags |= REQ_F_NEED_CLEANUP;
+		}
+		kmsg->nbufs = arg.nsegs;
+
+		/*
+		 * Special case 1 vec, can be a fast path. Note that multiple
+		 * contig buffers may get mapped to a single vec, but we can
+		 * still use ITER_UBUF for those.
+		 */
 		if (ret == 1) {
 			sr->buf = arg.iovs[0].iov_base;
 			sr->len = arg.iovs[0].iov_len;
@@ -1101,11 +1098,6 @@ static int io_recv_buf_select(struct io_kiocb *req, struct io_async_msghdr *kmsg
 		}
 		iov_iter_init(&kmsg->msg.msg_iter, ITER_DEST, arg.iovs, ret,
 				arg.out_len);
-		if (arg.iovs != &kmsg->fast_iov && arg.iovs != kmsg->free_iov) {
-			kmsg->free_iov_nr = ret;
-			kmsg->free_iov = arg.iovs;
-			req->flags |= REQ_F_NEED_CLEANUP;
-		}
 	} else {
 		void __user *buf;
 

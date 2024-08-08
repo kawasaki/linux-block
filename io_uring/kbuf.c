@@ -129,6 +129,7 @@ static int io_provided_buffers_select(struct io_kiocb *req, size_t *len,
 
 	arg->iovs[0].iov_base = buf;
 	arg->iovs[0].iov_len = *len;
+	arg->nsegs = 1;
 	return 1;
 }
 
@@ -194,11 +195,16 @@ void __user *io_buffer_select(struct io_kiocb *req, size_t *len,
 /* cap it at a reasonable 256, will be one page even for 4K */
 #define PEEK_MAX_IMPORT		256
 
+/*
+ * Returns how many iovecs were used to fill the range. arg->nsegs contains
+ * the number of buffers mapped, which may be less than the return value if
+ * segments were coalesced.
+ */
 static int io_ring_buffers_peek(struct io_kiocb *req, struct buf_sel_arg *arg,
 				struct io_buffer_list *bl)
 {
 	struct io_uring_buf_ring *br = bl->buf_ring;
-	struct iovec *iov = arg->iovs;
+	struct iovec *prev_iov, *iov = arg->iovs;
 	int nr_iovs = arg->nr_iovs;
 	__u16 nr_avail, tail, head;
 	struct io_uring_buf *buf;
@@ -253,9 +259,11 @@ static int io_ring_buffers_peek(struct io_kiocb *req, struct buf_sel_arg *arg,
 	if (!arg->max_len)
 		arg->max_len = INT_MAX;
 
+	prev_iov = NULL;
 	req->buf_index = buf->bid;
 	do {
 		u32 len = buf->len;
+		void __user *ubuf;
 
 		/* truncate end piece, if needed, for non partial buffers */
 		if (len > arg->max_len) {
@@ -264,10 +272,20 @@ static int io_ring_buffers_peek(struct io_kiocb *req, struct buf_sel_arg *arg,
 				buf->len = len;
 		}
 
-		iov->iov_base = u64_to_user_ptr(buf->addr);
-		iov->iov_len = len;
-		iov++;
+		ubuf = u64_to_user_ptr(buf->addr);
+		if (prev_iov &&
+		    prev_iov->iov_base + prev_iov->iov_len == ubuf &&
+		    prev_iov->iov_len + len <= MAX_RW_COUNT) {
+			prev_iov->iov_len += len;
+		} else {
+			iov->iov_base = ubuf;
+			iov->iov_len = len;
+			if (arg->coalesce)
+				prev_iov = iov;
+			iov++;
+		}
 
+		arg->nsegs++;
 		arg->out_len += len;
 		arg->max_len -= len;
 		if (!arg->max_len)
@@ -280,7 +298,8 @@ static int io_ring_buffers_peek(struct io_kiocb *req, struct buf_sel_arg *arg,
 		req->flags |= REQ_F_BL_EMPTY;
 
 	req->flags |= REQ_F_BUFFER_RING;
-	req->buf_list = bl;
+	if (arg->coalesce)
+		req->buf_list = bl;
 	return iov - arg->iovs;
 }
 
@@ -338,6 +357,38 @@ int io_buffers_peek(struct io_kiocb *req, struct buf_sel_arg *arg)
 
 	/* don't support multiple buffer selections for legacy */
 	return io_provided_buffers_select(req, &arg->max_len, bl, arg);
+}
+
+int io_buffer_segments(struct io_kiocb *req, int nbytes)
+{
+	struct io_uring_buf_ring *br;
+	struct io_buffer_list *bl;
+	int nbufs = 0;
+	unsigned bid;
+
+	/*
+	 * Safe to use ->buf_list here, as coalescing can only have happened
+	 * if we remained lock throughout the operation. Unlocked usage must
+	 * not have buf_sel_arg->coalesce set to true
+	 */
+	bl = req->buf_list;
+	if (unlikely(!bl || !(bl->flags & IOBL_BUF_RING)))
+		return 1;
+
+	bid = req->buf_index;
+	br = bl->buf_ring;
+	do {
+		struct io_uring_buf *buf;
+		int this_len;
+
+		buf = io_ring_head_to_buf(br, bid, bl->mask);
+		this_len = min_t(int, buf->len, nbytes);
+		nbufs++;
+		bid++;
+		nbytes -= this_len;
+	} while (nbytes);
+
+	return nbufs;
 }
 
 static int __io_remove_buffers(struct io_ring_ctx *ctx,
