@@ -139,7 +139,7 @@ static int tt_command_exec(int index, const char *arg)
 	return ret;
 }
 
-static ssize_t tt_command_process(struct dentry *dentry, const char __user *user_buf,
+static ssize_t tt_command_process(struct dentry *dentry, struct iov_iter *from,
 				  size_t count)
 {
 	char *buf __free(kfree);
@@ -150,7 +150,7 @@ static ssize_t tt_command_process(struct dentry *dentry, const char __user *user
 	if (!buf)
 		return -ENOMEM;
 
-	if (copy_from_user(buf, user_buf, count))
+	if (!copy_from_iter_full(buf, count, from))
 		return -EFAULT;
 
 	buf[count] = '\0';
@@ -170,13 +170,13 @@ static ssize_t tt_command_process(struct dentry *dentry, const char __user *user
 	return -EINVAL;
 }
 
-static ssize_t tt_command_write(struct file *file, const char __user *user_buf,
-				size_t count, loff_t *ppos)
+static ssize_t tt_command_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	struct dentry *dentry = file->f_path.dentry;
+	struct dentry *dentry = iocb->ki_filp->f_path.dentry;
+	size_t count = iov_iter_count(from);
 	ssize_t ret;
 
-	if (*ppos)
+	if (iocb->ki_pos)
 		return -EINVAL;
 
 	if (count + 1 > TT_COMMAND_SIZE)
@@ -186,7 +186,7 @@ static ssize_t tt_command_write(struct file *file, const char __user *user_buf,
 	if (unlikely(ret))
 		return ret;
 
-	ret = tt_command_process(dentry, user_buf, count);
+	ret = tt_command_process(dentry, from, count);
 	if (ret)
 		return ret;
 
@@ -194,7 +194,7 @@ static ssize_t tt_command_write(struct file *file, const char __user *user_buf,
 }
 
 static const struct file_operations tt_command_fops = {
-	.write = tt_command_write,
+	.write_iter = tt_command_write,
 	.open =	 simple_open,
 	.llseek = default_llseek,
 };
