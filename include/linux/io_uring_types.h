@@ -413,10 +413,6 @@ struct io_ring_ctx {
 
 	DECLARE_HASHTABLE(napi_ht, 4);
 #endif
-
-	/* protected by ->completion_lock */
-	unsigned			evfd_last_cq_tail;
-
 	/*
 	 * If IORING_SETUP_NO_MMAP is used, then the below holds
 	 * the gup'ed pages for the two rings, and the sqes.
