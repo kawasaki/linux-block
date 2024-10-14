@@ -1449,6 +1449,11 @@ void __io_submit_flush_completions(struct io_ring_ctx *ctx)
 
 		if (!(req->flags & REQ_F_CQE_SKIP) &&
 		    unlikely(!io_fill_cqe_req(ctx, req))) {
+			/* kill ignore inline for overflow, if set */
+			if (req->flags & REQ_F_IGNORE_INLINE) {
+				req->flags &= ~REQ_F_IGNORE_INLINE;
+				state->inline_completions--;
+			}
 			if (ctx->lockless_cq) {
 				spin_lock(&ctx->completion_lock);
 				io_req_cqe_overflow(req);
@@ -2239,6 +2244,7 @@ static void io_submit_state_start(struct io_submit_state *state,
 	state->plug_started = false;
 	state->need_plug = max_ios > 2;
 	state->submit_nr = max_ios;
+	state->inline_completions = 0;
 	/* set only head, no need to init link_last in advance */
 	state->link.head = NULL;
 }
@@ -3285,6 +3291,7 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 		size_t, argsz)
 {
 	struct io_ring_ctx *ctx;
+	int inline_complete = 0;
 	struct file *file;
 	long ret;
 
@@ -3349,6 +3356,7 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 			mutex_unlock(&ctx->uring_lock);
 			goto out;
 		}
+		inline_complete = ctx->submit_state.inline_completions;
 		if (flags & IORING_ENTER_GETEVENTS) {
 			if (ctx->syscall_iopoll)
 				goto iopoll_locked;
@@ -3386,8 +3394,10 @@ iopoll_locked:
 
 			ret2 = io_get_ext_arg(flags, argp, &ext_arg);
 			if (likely(!ret2)) {
-				min_complete = min(min_complete,
-						   ctx->cq_entries);
+				if (min_complete > ctx->cq_entries)
+					min_complete = ctx->cq_entries;
+				else
+					min_complete += inline_complete;
 				ret2 = io_cqring_wait(ctx, min_complete, flags,
 						      &ext_arg);
 			}
@@ -3674,7 +3684,8 @@ static __cold int io_uring_create(unsigned entries, struct io_uring_params *p,
 			IORING_FEAT_EXT_ARG | IORING_FEAT_NATIVE_WORKERS |
 			IORING_FEAT_RSRC_TAGS | IORING_FEAT_CQE_SKIP |
 			IORING_FEAT_LINKED_FILE | IORING_FEAT_REG_REG_RING |
-			IORING_FEAT_RECVSEND_BUNDLE | IORING_FEAT_MIN_TIMEOUT;
+			IORING_FEAT_RECVSEND_BUNDLE | IORING_FEAT_MIN_TIMEOUT |
+			IORING_FEAT_IGNORE_INLINE;
 
 	if (copy_to_user(params, p, sizeof(*p))) {
 		ret = -EFAULT;

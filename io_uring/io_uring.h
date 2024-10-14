@@ -357,6 +357,8 @@ static inline void io_req_complete_defer(struct io_kiocb *req)
 	lockdep_assert_held(&req->ctx->uring_lock);
 
 	wq_list_add_tail(&req->comp_list, &state->compl_reqs);
+	if (req->flags & REQ_F_IGNORE_INLINE)
+		state->inline_completions++;
 }
 
 static inline void io_commit_cqring_flush(struct io_ring_ctx *ctx)
