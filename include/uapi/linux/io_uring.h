@@ -362,12 +362,19 @@ enum io_uring_op {
  *				the starting buffer ID in cqe->flags as per
  *				usual for provided buffer usage. The buffers
  *				will be	contigious from the starting buffer ID.
+ *
+ * IORING_SEND_IGNORE_INLINE	If set for a send[msg] request, then the
+ *				completion will NOT be included in the count
+ *				waited for by an application, if completed
+ *				inline as part of submission. It will still
+ *				generate a CQE.
  */
 #define IORING_RECVSEND_POLL_FIRST	(1U << 0)
 #define IORING_RECV_MULTISHOT		(1U << 1)
 #define IORING_RECVSEND_FIXED_BUF	(1U << 2)
 #define IORING_SEND_ZC_REPORT_USAGE	(1U << 3)
 #define IORING_RECVSEND_BUNDLE		(1U << 4)
+#define IORING_SEND_IGNORE_INLINE	(1U << 5)
 
 /*
  * cqe.res for IORING_CQE_F_NOTIF if

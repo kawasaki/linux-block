@@ -400,7 +400,8 @@ static int io_sendmsg_prep_setup(struct io_kiocb *req, int is_msg)
 	return ret;
 }
 
-#define SENDMSG_FLAGS (IORING_RECVSEND_POLL_FIRST | IORING_RECVSEND_BUNDLE)
+#define SENDMSG_FLAGS (IORING_RECVSEND_POLL_FIRST | IORING_RECVSEND_BUNDLE | \
+			IORING_SEND_IGNORE_INLINE)
 
 int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 {
@@ -433,6 +434,11 @@ int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 		sr->msg_flags |= MSG_WAITALL;
 		sr->buf_group = req->buf_index;
 		req->buf_list = NULL;
+	}
+	if (sr->flags & IORING_SEND_IGNORE_INLINE) {
+		if (req->flags & REQ_F_CQE_SKIP)
+			return -EINVAL;
+		req->flags |= REQ_F_IGNORE_INLINE;
 	}
 
 #ifdef CONFIG_COMPAT
@@ -550,6 +556,8 @@ int io_sendmsg(struct io_kiocb *req, unsigned int issue_flags)
 	ret = __sys_sendmsg_sock(sock, &kmsg->msg, flags);
 
 	if (ret < min_ret) {
+		req->flags &= ~REQ_F_IGNORE_INLINE;
+
 		if (ret == -EAGAIN && (issue_flags & IO_URING_F_NONBLOCK))
 			return -EAGAIN;
 		if (ret > 0 && io_net_retry(sock, flags)) {
@@ -647,6 +655,8 @@ retry_bundle:
 	kmsg->msg.msg_flags = flags;
 	ret = sock_sendmsg(sock, &kmsg->msg);
 	if (ret < min_ret) {
+		req->flags &= ~REQ_F_IGNORE_INLINE;
+
 		if (ret == -EAGAIN && (issue_flags & IO_URING_F_NONBLOCK))
 			return -EAGAIN;
 
