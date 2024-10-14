@@ -1226,7 +1226,8 @@ void io_send_zc_cleanup(struct io_kiocb *req)
 }
 
 #define IO_ZC_FLAGS_COMMON (IORING_RECVSEND_POLL_FIRST | IORING_RECVSEND_FIXED_BUF)
-#define IO_ZC_FLAGS_VALID  (IO_ZC_FLAGS_COMMON | IORING_SEND_ZC_REPORT_USAGE)
+#define IO_ZC_FLAGS_VALID  (IO_ZC_FLAGS_COMMON | IORING_SEND_ZC_REPORT_USAGE | \
+				IORING_SEND_IGNORE_INLINE)
 
 int io_send_zc_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 {
@@ -1261,6 +1262,11 @@ int io_send_zc_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 			nd->zc_report = true;
 			nd->zc_used = false;
 			nd->zc_copied = false;
+		}
+		if (zc->flags & IORING_SEND_IGNORE_INLINE) {
+			if (req->flags & REQ_F_CQE_SKIP)
+				return -EINVAL;
+			req->flags |= REQ_F_IGNORE_INLINE;
 		}
 	}
 
@@ -1409,6 +1415,8 @@ int io_send_zc(struct io_kiocb *req, unsigned int issue_flags)
 	ret = sock_sendmsg(sock, &kmsg->msg);
 
 	if (unlikely(ret < min_ret)) {
+		req->flags &= ~REQ_F_IGNORE_INLINE;
+
 		if (ret == -EAGAIN && (issue_flags & IO_URING_F_NONBLOCK))
 			return -EAGAIN;
 
