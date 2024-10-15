@@ -578,28 +578,33 @@ int io_sendmsg(struct io_kiocb *req, unsigned int issue_flags)
 	return IOU_OK;
 }
 
-int io_send(struct io_kiocb *req, unsigned int issue_flags)
+static int __io_send_import(struct io_kiocb *req, struct buf_sel_arg *arg,
+			    int nsegs, unsigned int issue_flags)
 {
 	struct io_sr_msg *sr = io_kiocb_to_cmd(req, struct io_sr_msg);
 	struct io_async_msghdr *kmsg = req->async_data;
-	struct socket *sock;
-	unsigned flags;
-	int min_ret = 0;
-	int ret;
+	int ret = nsegs;
 
-	sock = sock_from_file(req->file);
-	if (unlikely(!sock))
-		return -ENOTSOCK;
+	if (nsegs == 1) {
+		sr->buf = arg->iovs[0].iov_base;
+		ret = import_ubuf(ITER_SOURCE, sr->buf, sr->len,
+				   &kmsg->msg.msg_iter);
+		if (unlikely(ret < 0))
+			return ret;
+	} else {
+		iov_iter_init(&kmsg->msg.msg_iter, ITER_SOURCE, arg->iovs,
+			      nsegs, arg->out_len);
+	}
 
-	if (!(req->flags & REQ_F_POLLED) &&
-	    (sr->flags & IORING_RECVSEND_POLL_FIRST))
-		return -EAGAIN;
+	return nsegs;
+}
 
-	flags = sr->msg_flags;
-	if (issue_flags & IO_URING_F_NONBLOCK)
-		flags |= MSG_DONTWAIT;
+static int io_send_import(struct io_kiocb *req, unsigned int issue_flags)
+{
+	struct io_sr_msg *sr = io_kiocb_to_cmd(req, struct io_sr_msg);
+	struct io_async_msghdr *kmsg = req->async_data;
+	int ret = 1;
 
-retry_bundle:
 	if (io_do_buffer_select(req)) {
 		struct buf_sel_arg arg = {
 			.iovs = &kmsg->fast_iov,
@@ -629,17 +634,37 @@ retry_bundle:
 		}
 		sr->len = arg.out_len;
 
-		if (ret == 1) {
-			sr->buf = arg.iovs[0].iov_base;
-			ret = import_ubuf(ITER_SOURCE, sr->buf, sr->len,
-						&kmsg->msg.msg_iter);
-			if (unlikely(ret))
-				return ret;
-		} else {
-			iov_iter_init(&kmsg->msg.msg_iter, ITER_SOURCE,
-					arg.iovs, ret, arg.out_len);
-		}
+		return __io_send_import(req, &arg, ret, issue_flags);
 	}
+
+	return ret;
+}
+
+int io_send(struct io_kiocb *req, unsigned int issue_flags)
+{
+	struct io_sr_msg *sr = io_kiocb_to_cmd(req, struct io_sr_msg);
+	struct io_async_msghdr *kmsg = req->async_data;
+	struct socket *sock;
+	unsigned flags;
+	int min_ret = 0;
+	int ret;
+
+	sock = sock_from_file(req->file);
+	if (unlikely(!sock))
+		return -ENOTSOCK;
+
+	if (!(req->flags & REQ_F_POLLED) &&
+	    (sr->flags & IORING_RECVSEND_POLL_FIRST))
+		return -EAGAIN;
+
+	flags = sr->msg_flags;
+	if (issue_flags & IO_URING_F_NONBLOCK)
+		flags |= MSG_DONTWAIT;
+
+retry_bundle:
+	ret = io_send_import(req, issue_flags);
+	if (unlikely(ret < 0))
+		return ret;
 
 	/*
 	 * If MSG_WAITALL is set, or this is a bundle send, then we need
