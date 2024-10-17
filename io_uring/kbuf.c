@@ -245,6 +245,7 @@ static int io_ring_buffers_peek(struct io_kiocb *req, struct buf_sel_arg *arg,
 			kfree(arg->iovs);
 		arg->iovs = iov;
 		nr_iovs = nr_avail;
+		arg->mode |= KBUF_MODE_FREE;
 	} else if (nr_avail < nr_iovs) {
 		nr_iovs = nr_avail;
 	}
