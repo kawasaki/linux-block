@@ -117,10 +117,11 @@ static void __user *io_provided_buffer_select(struct io_kiocb *req, size_t *len,
 	return NULL;
 }
 
-static int io_provided_buffers_select(struct io_kiocb *req, size_t *len,
-				      struct io_buffer_list *bl,
-				      struct iovec *iov)
+static int io_provided_buffers_select(struct io_kiocb *req,
+				      struct buf_sel_arg *arg,
+				      struct io_buffer_list *bl, size_t *len)
 {
+	struct iovec *iov = arg->iovs;
 	void __user *buf;
 
 	buf = io_provided_buffer_select(req, len, bl);
@@ -311,7 +312,7 @@ int io_buffers_select(struct io_kiocb *req, struct buf_sel_arg *arg,
 			io_kbuf_commit(req, bl, arg->out_len, ret);
 		}
 	} else {
-		ret = io_provided_buffers_select(req, &arg->out_len, bl, arg->iovs);
+		ret = io_provided_buffers_select(req, arg, bl, &arg->out_len);
 	}
 out_unlock:
 	io_ring_submit_unlock(ctx, issue_flags);
@@ -338,7 +339,7 @@ int io_buffers_peek(struct io_kiocb *req, struct buf_sel_arg *arg)
 	}
 
 	/* don't support multiple buffer selections for legacy */
-	return io_provided_buffers_select(req, &arg->max_len, bl, arg->iovs);
+	return io_provided_buffers_select(req, arg, bl, &arg->max_len);
 }
 
 static int __io_remove_buffers(struct io_ring_ctx *ctx,
