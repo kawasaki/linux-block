@@ -81,6 +81,9 @@ struct io_sr_msg {
 	struct io_kiocb 		*notif;
 };
 
+static int io_sg_from_iter(struct sk_buff *skb, struct iov_iter *from,
+			   size_t length);
+
 /*
  * Number of times we'll try and do receives if there's more data. If we
  * exceed this limit, then add us to the back of the queue and retry from
@@ -576,6 +579,35 @@ int io_sendmsg(struct io_kiocb *req, unsigned int issue_flags)
 		ret = sr->done_io;
 	io_req_set_res(req, ret, 0);
 	return IOU_OK;
+}
+
+static int io_send_zc_import_single(struct io_kiocb *req,
+				    unsigned int issue_flags)
+{
+	struct io_sr_msg *sr = io_kiocb_to_cmd(req, struct io_sr_msg);
+	struct io_async_msghdr *kmsg = req->async_data;
+	struct io_ring_ctx *ctx = req->ctx;
+	struct io_rsrc_node *node;
+	int ret;
+
+	ret = -EFAULT;
+	io_ring_submit_lock(ctx, issue_flags);
+	node = io_rsrc_node_lookup(&ctx->buf_table, req->buf_index);
+	if (node) {
+		io_req_assign_rsrc_node(sr->notif, node);
+		ret = 0;
+	}
+	io_ring_submit_unlock(ctx, issue_flags);
+
+	if (unlikely(ret))
+		return ret;
+
+	ret = io_import_fixed(ITER_SOURCE, &kmsg->msg.msg_iter, node->buf,
+				(u64)(uintptr_t)sr->buf, sr->len);
+	if (unlikely(ret))
+		return ret;
+	kmsg->msg.sg_from_iter = io_sg_from_iter;
+	return 0;
 }
 
 static int __io_send_import(struct io_kiocb *req, struct buf_sel_arg *arg,
@@ -1365,39 +1397,17 @@ static int io_send_zc_import(struct io_kiocb *req, unsigned int issue_flags)
 	struct io_async_msghdr *kmsg = req->async_data;
 	int ret;
 
-	if (sr->flags & IORING_RECVSEND_FIXED_BUF) {
-		struct io_ring_ctx *ctx = req->ctx;
-		struct io_rsrc_node *node;
+	if (sr->flags & IORING_RECVSEND_FIXED_BUF)
+		return io_send_zc_import_single(req, issue_flags);
 
-		ret = -EFAULT;
-		io_ring_submit_lock(ctx, issue_flags);
-		node = io_rsrc_node_lookup(&ctx->buf_table, sr->buf_index);
-		if (node) {
-			io_req_assign_rsrc_node(sr->notif, node);
-			ret = 0;
-		}
-		io_ring_submit_unlock(ctx, issue_flags);
-
-		if (unlikely(ret))
-			return ret;
-
-		ret = io_import_fixed(ITER_SOURCE, &kmsg->msg.msg_iter,
-					node->buf, (u64)(uintptr_t)sr->buf,
-					sr->len);
-		if (unlikely(ret))
-			return ret;
-		kmsg->msg.sg_from_iter = io_sg_from_iter;
-	} else {
-		ret = import_ubuf(ITER_SOURCE, sr->buf, sr->len, &kmsg->msg.msg_iter);
-		if (unlikely(ret))
-			return ret;
-		ret = io_notif_account_mem(sr->notif, sr->len);
-		if (unlikely(ret))
-			return ret;
-		kmsg->msg.sg_from_iter = io_sg_from_iter_iovec;
-	}
-
-	return ret;
+	ret = import_ubuf(ITER_SOURCE, sr->buf, sr->len, &kmsg->msg.msg_iter);
+	if (unlikely(ret))
+		return ret;
+	ret = io_notif_account_mem(sr->notif, sr->len);
+	if (unlikely(ret))
+		return ret;
+	kmsg->msg.sg_from_iter = io_sg_from_iter_iovec;
+	return 0;
 }
 
 int io_send_zc(struct io_kiocb *req, unsigned int issue_flags)
