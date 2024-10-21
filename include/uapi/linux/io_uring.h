@@ -615,6 +615,9 @@ enum io_uring_register_op {
 	/* send MSG_RING without having a ring */
 	IORING_REGISTER_SEND_MSG_RING		= 31,
 
+	/* resize CQ ring */
+	IORING_REGISTER_RESIZE_RINGS		= 33,
+
 	/* this goes last */
 	IORING_REGISTER_LAST,
 
