@@ -201,6 +201,8 @@ struct io_submit_state {
 	/* batch completion logic */
 	struct io_wq_work_list	compl_reqs;
 	struct io_submit_link	link;
+	/* points to current group */
+	struct io_submit_link	group;
 
 	bool			plug_started;
 	bool			need_plug;
@@ -450,6 +452,7 @@ enum {
 
 	/* 16 bits of sqe->flags2 */
 	REQ_F_PERSONALITY_BIT	= IOSQE2_PERSONALITY_BIT,
+	REQ_F_GROUP_BIT		= IOSQE2_GROUP_BIT,
 
 	/* first byte taken by sqe->flags, next 2 by sqe->flags2 */
 	REQ_F_FAIL_BIT		= 24,
@@ -480,6 +483,7 @@ enum {
 	REQ_F_BL_EMPTY_BIT,
 	REQ_F_BL_NO_RECYCLE_BIT,
 	REQ_F_BUFFERS_COMMIT_BIT,
+	REQ_F_GROUP_LEADER_BIT,
 
 	/* not a real bit, just to check we're not overflowing the space */
 	__REQ_F_LAST_BIT,
@@ -507,6 +511,7 @@ enum {
 	REQ_F_FLAGS2		= IO_REQ_FLAG(REQ_F_FLAGS2_BIT),
 
 	REQ_F_PERSONALITY	= IO_REQ_FLAG(REQ_F_PERSONALITY_BIT),
+	REQ_F_GROUP		= IO_REQ_FLAG(REQ_F_GROUP_BIT),
 
 	/* fail rest of links */
 	REQ_F_FAIL		= IO_REQ_FLAG(REQ_F_FAIL_BIT),
@@ -562,6 +567,8 @@ enum {
 	REQ_F_BL_NO_RECYCLE	= IO_REQ_FLAG(REQ_F_BL_NO_RECYCLE_BIT),
 	/* buffer ring head needs incrementing on put */
 	REQ_F_BUFFERS_COMMIT	= IO_REQ_FLAG(REQ_F_BUFFERS_COMMIT_BIT),
+	/* sqe group lead */
+	REQ_F_GROUP_LEADER	= IO_REQ_FLAG(REQ_F_GROUP_LEADER_BIT),
 };
 
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, struct io_tw_state *ts);
@@ -671,6 +678,8 @@ struct io_kiocb {
 	void				*async_data;
 	/* linked requests, IFF REQ_F_HARDLINK or REQ_F_LINK are set */
 	atomic_t			poll_refs;
+	/* reference for group leader request */
+	int				grp_refs;
 	struct io_kiocb			*link;
 	/* custom credentials, valid IFF REQ_F_CREDS is set */
 	const struct cred		*creds;
@@ -680,6 +689,14 @@ struct io_kiocb {
 		u64			extra1;
 		u64			extra2;
 	} big_cqe;
+
+	union {
+		/* links all group members for leader */
+		struct io_kiocb			*grp_link;
+
+		/* points to group leader for member */
+		struct io_kiocb			*grp_leader;
+	};
 };
 
 struct io_overflow_cqe {

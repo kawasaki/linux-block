@@ -135,6 +135,7 @@ enum io_uring_sqe_flags_bit {
 
 enum io_uring_sqe_flags2_bit {
 	IOSQE2_PERSONALITY_BIT	= IOSQE_FLAGS2_BIT + 1,
+	IOSQE2_GROUP_BIT,
 };
 
 /*
@@ -162,6 +163,7 @@ enum io_uring_sqe_flags2_bit {
  */
  /* if set, sqe->personality2 contains personality */
 #define IOSQE2_PERSONALITY	(1U << IOSQE2_PERSONALITY_BIT)
+#define IOSQE2_GROUP		(1U << IOSQE2_GROUP_BIT)
 
 /*
  * io_uring_setup() flags
@@ -580,6 +582,7 @@ struct io_uring_params {
 #define IORING_FEAT_REG_REG_RING	(1U << 13)
 #define IORING_FEAT_RECVSEND_BUNDLE	(1U << 14)
 #define IORING_FEAT_MIN_TIMEOUT		(1U << 15)
+#define IORING_FEAT_SQE_GROUP		(1U << 16)
 
 /*
  * io_uring_register(2) opcodes and arguments
