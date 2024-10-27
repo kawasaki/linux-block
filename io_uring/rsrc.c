@@ -177,7 +177,7 @@ static int __io_sqe_files_update(struct io_ring_ctx *ctx,
 {
 	u64 __user *tags = u64_to_user_ptr(up->tags);
 	__s32 __user *fds = u64_to_user_ptr(up->data);
-	int fd, i, err = 0;
+	int fd, index, err = 0;
 	unsigned int done;
 
 	if (!ctx->file_table.data.nr)
@@ -186,6 +186,7 @@ static int __io_sqe_files_update(struct io_ring_ctx *ctx,
 		return -EINVAL;
 
 	for (done = 0; done < nr_args; done++) {
+		struct io_rsrc_node *node;
 		u64 tag = 0;
 
 		if ((tags && copy_from_user(&tag, &tags[done], sizeof(tag))) ||
@@ -200,11 +201,12 @@ static int __io_sqe_files_update(struct io_ring_ctx *ctx,
 		if (fd == IORING_REGISTER_FILES_SKIP)
 			continue;
 
-		i = array_index_nospec(up->offset + done, ctx->file_table.data.nr);
-		if (ctx->file_table.data.nodes[i]) {
-			io_put_rsrc_node(ctx->file_table.data.nodes[i]);
-			ctx->file_table.data.nodes[i] = NULL;
-			io_file_bitmap_clear(&ctx->file_table, i);
+		index = up->offset + done;
+		node = io_rsrc_node_lookup(&ctx->file_table.data, &index);
+		if (node) {
+			io_put_rsrc_node(node);
+			ctx->file_table.data.nodes[index] = NULL;
+			io_file_bitmap_clear(&ctx->file_table, index);
 		}
 		if (fd != -1) {
 			struct file *file = fget(fd);
@@ -222,18 +224,18 @@ static int __io_sqe_files_update(struct io_ring_ctx *ctx,
 				err = -EBADF;
 				break;
 			}
-			node = io_rsrc_node_alloc(ctx, &ctx->file_table.data, i,
-						  IORING_RSRC_FILE);
+			node = io_rsrc_node_alloc(ctx, &ctx->file_table.data,
+						  index, IORING_RSRC_FILE);
 			if (!node) {
 				err = -ENOMEM;
 				fput(file);
 				break;
 			}
-			ctx->file_table.data.nodes[i] = node;
+			ctx->file_table.data.nodes[index] = node;
 			if (tag)
 				node->tag = tag;
 			io_fixed_file_set(node, file);
-			io_file_bitmap_set(&ctx->file_table, i);
+			io_file_bitmap_set(&ctx->file_table, index);
 		}
 	}
 	return done ? done : err;
@@ -965,13 +967,14 @@ static int io_clone_buffers(struct io_ring_ctx *ctx, struct io_ring_ctx *src_ctx
 		goto out_unlock;
 
 	for (i = 0; i < nbufs; i++) {
-		struct io_rsrc_node *src_node = src_ctx->buf_table.nodes[i];
-		struct io_rsrc_node *dst_node;
+		struct io_rsrc_node *dst_node, *src_node;
+		int index = i;
 
+		src_node = io_rsrc_node_lookup(&src_ctx->buf_table, &index);
 		if (src_node == rsrc_empty_node) {
 			dst_node = rsrc_empty_node;
 		} else {
-			dst_node = io_rsrc_node_alloc(ctx, &data, i, IORING_RSRC_BUFFER);
+			dst_node = io_rsrc_node_alloc(ctx, &data, index, IORING_RSRC_BUFFER);
 			if (!dst_node)
 				goto out_put_free;
 
