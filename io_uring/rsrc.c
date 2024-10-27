@@ -151,6 +151,8 @@ __cold void io_rsrc_data_free(struct io_rsrc_data *data)
 		if (data->nodes[data->nr])
 			io_put_rsrc_node(data->nodes[data->nr]);
 	}
+	data->last_node = NULL;
+	data->last_index = -1U;
 	kvfree(data->nodes);
 	data->nodes = NULL;
 	data->nr = 0;
@@ -162,6 +164,7 @@ __cold int io_rsrc_data_alloc(struct io_rsrc_data *data, unsigned nr)
 					GFP_KERNEL_ACCOUNT | __GFP_ZERO);
 	if (data->nodes) {
 		data->nr = nr;
+		data->last_index = -1U;
 		return 0;
 	}
 	return -ENOMEM;

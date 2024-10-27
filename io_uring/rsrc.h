@@ -74,8 +74,16 @@ extern const struct io_rsrc_node empty_node;
 static inline struct io_rsrc_node *io_rsrc_node_lookup(struct io_rsrc_data *data,
 						       int index)
 {
-	if (index < data->nr)
-		return data->nodes[array_index_nospec(index, data->nr)];
+	if (index < data->nr) {
+		if (index != data->last_index) {
+			index = array_index_nospec(index, data->nr);
+			if (data->nodes[index]) {
+				data->last_index = index;
+				data->last_node = data->nodes[index];
+			}
+		}
+		return data->last_node;
+	}
 	return NULL;
 }
 
@@ -89,8 +97,14 @@ static inline bool io_reset_rsrc_node(struct io_rsrc_data *data, int index)
 {
 	struct io_rsrc_node *node = data->nodes[index];
 
-	if (!node)
+	if (!node) {
+		WARN_ON_ONCE(index == data->last_index);
 		return false;
+	}
+	if (index == data->last_index) {
+		data->last_node = NULL;
+		data->last_index = -1U;
+	}
 	io_put_rsrc_node(node);
 	data->nodes[index] = NULL;
 	return true;
