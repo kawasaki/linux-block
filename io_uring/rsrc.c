@@ -1078,3 +1078,33 @@ int io_register_clone_buffers(struct io_ring_ctx *ctx, void __user *arg)
 		fput(file);
 	return ret;
 }
+
+int io_local_buf_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
+{
+	struct io_ring_ctx *ctx = req->ctx;
+	struct io_submit_state *state = &ctx->submit_state;
+	struct page *last_hpage = NULL;
+	struct io_rsrc_node *node;
+	struct iovec iov;
+	__u64 tag;
+
+	if (state->rsrc_node)
+		return -EBUSY;
+
+	iov.iov_base = u64_to_user_ptr(READ_ONCE(sqe->addr));
+	iov.iov_len = READ_ONCE(sqe->len);
+	tag = READ_ONCE(sqe->addr2);
+
+	node = io_sqe_buffer_register(ctx, &iov, &last_hpage);
+	if (IS_ERR(node))
+		return PTR_ERR(node);
+
+	node->tag = tag;
+	state->rsrc_node = node;
+	return 0;
+}
+
+int io_local_buf(struct io_kiocb *req, unsigned int issue_flags)
+{
+	return IOU_OK;
+}

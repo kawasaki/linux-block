@@ -515,6 +515,10 @@ const struct io_issue_def io_issue_defs[] = {
 		.prep			= io_eopnotsupp_prep,
 #endif
 	},
+	[IORING_OP_LOCAL_BUF] = {
+		.prep			= io_local_buf_prep,
+		.issue			= io_local_buf,
+	},
 };
 
 const struct io_cold_def io_cold_defs[] = {
@@ -743,6 +747,9 @@ const struct io_cold_def io_cold_defs[] = {
 	},
 	[IORING_OP_LISTEN] = {
 		.name			= "LISTEN",
+	},
+	[IORING_OP_LOCAL_BUF] = {
+		.name			= "LOCAL_BUF",
 	},
 };
 

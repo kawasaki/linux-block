@@ -206,6 +206,7 @@ struct io_submit_state {
 	bool			need_plug;
 	bool			cq_flush;
 	unsigned short		submit_nr;
+	struct io_rsrc_node	*rsrc_node;
 	struct blk_plug		plug;
 };
 

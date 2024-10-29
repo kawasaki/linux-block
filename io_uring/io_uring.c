@@ -2205,6 +2205,7 @@ static void io_submit_state_end(struct io_ring_ctx *ctx)
 		io_queue_sqe_fallback(state->link.head);
 	/* flush only after queuing links as they can generate completions */
 	io_submit_flush_completions(ctx);
+	io_put_rsrc_node(state->rsrc_node);
 	if (state->plug_started)
 		blk_finish_plug(&state->plug);
 }
@@ -2220,6 +2221,7 @@ static void io_submit_state_start(struct io_submit_state *state,
 	state->submit_nr = max_ios;
 	/* set only head, no need to init link_last in advance */
 	state->link.head = NULL;
+	state->rsrc_node = NULL;
 }
 
 static void io_commit_sqring(struct io_ring_ctx *ctx)

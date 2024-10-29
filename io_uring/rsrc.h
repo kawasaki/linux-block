@@ -118,4 +118,7 @@ static inline void __io_unaccount_mem(struct user_struct *user,
 	atomic_long_sub(nr_pages, &user->locked_vm);
 }
 
+int io_local_buf_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe);
+int io_local_buf(struct io_kiocb *req, unsigned int issue_flags);
+
 #endif
