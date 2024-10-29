@@ -996,8 +996,22 @@ static int io_clone_buffers(struct io_ring_ctx *ctx, struct io_ring_ctx *src_ctx
 	/* Have a ref on the bufs now, drop src lock and re-grab our own lock */
 	mutex_unlock(&src_ctx->uring_lock);
 	mutex_lock(&ctx->uring_lock);
-	if (!ctx->buf_table.nr) {
+
+	/*
+	 * Not replacing, or replacing an empty table. Just install the
+	 * new table.
+	 */
+	if (!(arg->flags & IORING_REGISTER_DST_REPLACE) || !ctx->buf_table.nr) {
 		ctx->buf_table = data;
+		return 0;
+	} else if (arg->flags & IORING_REGISTER_DST_REPLACE) {
+		/* put nodes in overlapping spots, if any */
+		for (i = arg->src_off; i < arg->nr; i++) {
+			io_reset_rsrc_node(&ctx->buf_table, i);
+			ctx->buf_table.nodes[i] = data.nodes[i];
+			data.nodes[i] = NULL;
+		}
+		io_rsrc_data_free(&data);
 		return 0;
 	}
 
@@ -1032,12 +1046,12 @@ int io_register_clone_buffers(struct io_ring_ctx *ctx, void __user *arg)
 	struct file *file;
 	int ret;
 
-	if (ctx->buf_table.nr)
-		return -EBUSY;
 	if (copy_from_user(&buf, arg, sizeof(buf)))
 		return -EFAULT;
-	if (buf.flags & ~IORING_REGISTER_SRC_REGISTERED)
+	if (buf.flags & ~(IORING_REGISTER_SRC_REGISTERED|IORING_REGISTER_DST_REPLACE))
 		return -EINVAL;
+	if (!(buf.flags & IORING_REGISTER_DST_REPLACE) && ctx->buf_table.nr)
+		return -EBUSY;
 	if (memchr_inv(buf.pad, 0, sizeof(buf.pad)))
 		return -EINVAL;
 
