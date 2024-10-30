@@ -8,6 +8,8 @@
 #include <linux/nospec.h>
 #include <linux/hugetlb.h>
 #include <linux/compat.h>
+#include <linux/bvec.h>
+#include <linux/blk-mq.h>
 #include <linux/io_uring.h>
 
 #include <uapi/linux/io_uring.h>
@@ -460,6 +462,9 @@ void io_free_rsrc_node(struct io_rsrc_node *node)
 	case IORING_RSRC_BUFFER:
 		if (node->buf)
 			io_buffer_unmap(node->ctx, node);
+		break;
+	case IORING_RSRC_KBUFFER:
+		node->kbuf_fn(node);
 		break;
 	default:
 		WARN_ON_ONCE(1);
@@ -1077,6 +1082,62 @@ int io_register_clone_buffers(struct io_ring_ctx *ctx, void __user *arg)
 	if (!registered_src)
 		fput(file);
 	return ret;
+}
+
+struct io_rsrc_node *io_rsrc_map_request(struct io_ring_ctx *ctx,
+					 struct request *req,
+					 void (*kbuf_fn)(struct io_rsrc_node *))
+{
+	struct io_mapped_ubuf *imu = NULL;
+	struct io_rsrc_node *node = NULL;
+	struct req_iterator rq_iter;
+	struct bio_vec bv;
+	int nr_bvecs;
+
+	if (!bio_has_data(req->bio))
+		goto out;
+
+	nr_bvecs = 0;
+	rq_for_each_bvec(bv, req, rq_iter)
+		nr_bvecs++;
+	if (!nr_bvecs)
+		goto out;
+
+	node = io_rsrc_node_alloc(ctx, IORING_RSRC_KBUFFER);
+	if (!node)
+		goto out;
+	node->buf = NULL;
+
+	imu = kvmalloc(struct_size(imu, bvec, nr_bvecs), GFP_NOIO);
+	if (!imu)
+		goto out;
+
+	imu->ubuf = 0;
+	imu->len = 0;
+	if (req->bio != req->biotail) {
+		int idx = 0;
+
+		rq_for_each_bvec(bv, req, rq_iter) {
+			imu->bvec[idx++] = bv;
+			imu->len += bv.bv_len;
+		}
+	} else {
+		struct bio *bio = req->bio;
+
+		imu->bvec[0] = *__bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
+		imu->len = imu->bvec[0].bv_len;
+	}
+	imu->nr_bvecs = nr_bvecs;
+	imu->folio_shift = PAGE_SHIFT;
+	refcount_set(&imu->refs, 1);
+	node->buf = imu;
+	node->kbuf_fn = kbuf_fn;
+	return node;
+out:
+	if (node)
+		io_put_rsrc_node(node);
+	kfree(imu);
+	return NULL;
 }
 
 int io_local_buf_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)

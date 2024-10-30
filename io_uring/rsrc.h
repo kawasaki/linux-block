@@ -11,6 +11,7 @@
 enum {
 	IORING_RSRC_FILE		= 0,
 	IORING_RSRC_BUFFER		= 1,
+	IORING_RSRC_KBUFFER		= 2,
 };
 
 struct io_rsrc_node {
@@ -19,6 +20,7 @@ struct io_rsrc_node {
 	u16				type;
 
 	u64 tag;
+	void (*kbuf_fn)(struct io_rsrc_node *);
 	union {
 		unsigned long file_ptr;
 		struct io_mapped_ubuf *buf;
@@ -51,6 +53,10 @@ int io_rsrc_data_alloc(struct io_rsrc_data *data, unsigned nr);
 int io_import_fixed(int ddir, struct iov_iter *iter,
 			   struct io_mapped_ubuf *imu,
 			   u64 buf_addr, size_t len);
+
+struct io_rsrc_node *io_rsrc_map_request(struct io_ring_ctx *ctx,
+					 struct request *req,
+					 void (*kbuf_fn)(struct io_rsrc_node *));
 
 int io_register_clone_buffers(struct io_ring_ctx *ctx, void __user *arg);
 int io_sqe_buffers_unregister(struct io_ring_ctx *ctx);
