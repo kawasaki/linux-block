@@ -109,7 +109,8 @@
 			  IOSQE_IO_HARDLINK | IOSQE_ASYNC)
 
 #define SQE_VALID_FLAGS	(SQE_COMMON_FLAGS | IOSQE_BUFFER_SELECT | \
-			IOSQE_IO_DRAIN | IOSQE_CQE_SKIP_SUCCESS)
+			IOSQE_IO_DRAIN | IOSQE_CQE_SKIP_SUCCESS | \
+			IOSQE_FLAGS2 | IOSQE2_PERSONALITY)
 
 #define IO_REQ_CLEAN_FLAGS (REQ_F_BUFFER_SELECTED | REQ_F_NEED_CLEANUP | \
 				REQ_F_POLLED | REQ_F_INFLIGHT | REQ_F_CREDS | \
@@ -2033,6 +2034,8 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 	req->opcode = opcode = READ_ONCE(sqe->opcode);
 	/* same numerical values with corresponding REQ_F_*, safe to copy */
 	sqe_flags = READ_ONCE(sqe->flags);
+	if (sqe_flags & REQ_F_FLAGS2)
+		sqe_flags |= (__u32) READ_ONCE(sqe->flags2) << 8;
 	req->flags = (__force io_req_flags_t) sqe_flags;
 	req->cqe.user_data = READ_ONCE(sqe->user_data);
 	req->file = NULL;
@@ -2096,8 +2099,12 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 		}
 	}
 
-	personality = READ_ONCE(sqe->personality);
-	if (personality) {
+	personality = 0;
+	if (req->flags & REQ_F_PERSONALITY)
+		personality = READ_ONCE(sqe->personality2);
+	else if (!(req->flags & REQ_F_FLAGS2))
+		personality = READ_ONCE(sqe->personality);
+	if (unlikely(personality)) {
 		int ret;
 
 		req->creds = xa_load(&ctx->personalities, personality);
@@ -3913,7 +3920,7 @@ static int __init io_uring_init(void)
 	BUILD_BUG_SQE_ELEM(46, __u16,  __pad3[0]);
 	BUILD_BUG_SQE_ELEM(48, __u64,  addr3);
 	BUILD_BUG_SQE_ELEM_SIZE(48, 0, cmd);
-	BUILD_BUG_SQE_ELEM(56, __u64,  __pad2);
+	BUILD_BUG_SQE_ELEM(58, __u16,  __pad2[0]);
 
 	BUILD_BUG_ON(sizeof(struct io_uring_files_update) !=
 		     sizeof(struct io_uring_rsrc_update));
@@ -3925,9 +3932,6 @@ static int __init io_uring_init(void)
 	BUILD_BUG_ON(offsetof(struct io_uring_buf, resv) !=
 		     offsetof(struct io_uring_buf_ring, tail));
 
-	/* should fit into one byte */
-	BUILD_BUG_ON(SQE_VALID_FLAGS >= (1 << 8));
-	BUILD_BUG_ON(SQE_COMMON_FLAGS >= (1 << 8));
 	BUILD_BUG_ON((SQE_VALID_FLAGS | SQE_COMMON_FLAGS) != SQE_VALID_FLAGS);
 
 	BUILD_BUG_ON(__REQ_F_LAST_BIT > 8 * sizeof_field(struct io_kiocb, flags));

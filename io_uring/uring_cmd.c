@@ -200,7 +200,8 @@ int io_uring_cmd_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 {
 	struct io_uring_cmd *ioucmd = io_kiocb_to_cmd(req, struct io_uring_cmd);
 
-	if (sqe->__pad1)
+	/* uring cmd doesn't support setting a personality */
+	if (sqe->__pad1 || req->flags & REQ_F_PERSONALITY)
 		return -EINVAL;
 
 	ioucmd->flags = READ_ONCE(sqe->uring_cmd_flags);

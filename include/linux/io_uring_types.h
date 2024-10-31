@@ -438,6 +438,7 @@ struct io_tw_state {
 };
 
 enum {
+	/* 8 bits of sqe->flags */
 	REQ_F_FIXED_FILE_BIT	= IOSQE_FIXED_FILE_BIT,
 	REQ_F_IO_DRAIN_BIT	= IOSQE_IO_DRAIN_BIT,
 	REQ_F_LINK_BIT		= IOSQE_IO_LINK_BIT,
@@ -445,9 +446,16 @@ enum {
 	REQ_F_FORCE_ASYNC_BIT	= IOSQE_ASYNC_BIT,
 	REQ_F_BUFFER_SELECT_BIT	= IOSQE_BUFFER_SELECT_BIT,
 	REQ_F_CQE_SKIP_BIT	= IOSQE_CQE_SKIP_SUCCESS_BIT,
+	REQ_F_FLAGS2_BIT	= IOSQE_FLAGS2_BIT,
 
-	/* first byte is taken by user flags, shift it to not overlap */
-	REQ_F_FAIL_BIT		= 8,
+	/* 16 bits of sqe->flags2 */
+	REQ_F_PERSONALITY_BIT	= IOSQE2_PERSONALITY_BIT,
+
+	/* first byte taken by sqe->flags, next 2 by sqe->flags2 */
+	REQ_F_FAIL_BIT		= 24,
+	/* keep async read/write and isreg together and in order */
+	REQ_F_SUPPORT_NOWAIT_BIT,
+	REQ_F_ISREG_BIT,
 	REQ_F_INFLIGHT_BIT,
 	REQ_F_CUR_POS_BIT,
 	REQ_F_NOWAIT_BIT,
@@ -467,9 +475,6 @@ enum {
 	REQ_F_DOUBLE_POLL_BIT,
 	REQ_F_APOLL_MULTISHOT_BIT,
 	REQ_F_CLEAR_POLLIN_BIT,
-	/* keep async read/write and isreg together and in order */
-	REQ_F_SUPPORT_NOWAIT_BIT,
-	REQ_F_ISREG_BIT,
 	REQ_F_POLL_NO_LAZY_BIT,
 	REQ_F_CAN_POLL_BIT,
 	REQ_F_BL_EMPTY_BIT,
@@ -498,6 +503,10 @@ enum {
 	REQ_F_BUFFER_SELECT	= IO_REQ_FLAG(REQ_F_BUFFER_SELECT_BIT),
 	/* IOSQE_CQE_SKIP_SUCCESS */
 	REQ_F_CQE_SKIP		= IO_REQ_FLAG(REQ_F_CQE_SKIP_BIT),
+	/* ->flags2 is valid */
+	REQ_F_FLAGS2		= IO_REQ_FLAG(REQ_F_FLAGS2_BIT),
+
+	REQ_F_PERSONALITY	= IO_REQ_FLAG(REQ_F_PERSONALITY_BIT),
 
 	/* fail rest of links */
 	REQ_F_FAIL		= IO_REQ_FLAG(REQ_F_FAIL_BIT),

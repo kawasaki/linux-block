@@ -538,8 +538,8 @@ TRACE_EVENT(io_uring_req_failed,
 	TP_printk("ring %p, req %p, user_data 0x%llx, "
 		  "opcode %s, flags 0x%x, prio=%d, off=%llu, addr=%llu, "
 		  "len=%u, rw_flags=0x%x, buf_index=%d, "
-		  "personality=%d, file_index=%d, pad=0x%llx, addr3=%llx, "
-		  "error=%d",
+		  "personality/flags2=0x%x, file_index=%d, pad=0x%llx, "
+		  "addr3=%llx, error=%d",
 		  __entry->ctx, __entry->req, __entry->user_data,
 		  __get_str(op_str),
 		  __entry->flags, __entry->ioprio,

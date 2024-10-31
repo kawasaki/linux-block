@@ -82,8 +82,12 @@ struct io_uring_sqe {
 		/* for grouped buffer selection */
 		__u16	buf_group;
 	} __attribute__((packed));
-	/* personality to use, if used */
-	__u16	personality;
+	union {
+		/* personality to use, if used */
+		__u16	personality;
+		/* 2nd set of flags, can't be used with personality */
+		__u16	flags2;
+	};
 	union {
 		__s32	splice_fd_in;
 		__u32	file_index;
@@ -96,7 +100,9 @@ struct io_uring_sqe {
 	union {
 		struct {
 			__u64	addr3;
-			__u64	__pad2[1];
+			/* personality to use, if IOSQE2_PERSONALITY set */
+			__u16	personality2;
+			__u16	__pad2[3];
 		};
 		__u64	optval;
 		/*
@@ -124,6 +130,11 @@ enum io_uring_sqe_flags_bit {
 	IOSQE_ASYNC_BIT,
 	IOSQE_BUFFER_SELECT_BIT,
 	IOSQE_CQE_SKIP_SUCCESS_BIT,
+	IOSQE_FLAGS2_BIT,
+};
+
+enum io_uring_sqe_flags2_bit {
+	IOSQE2_PERSONALITY_BIT	= IOSQE_FLAGS2_BIT + 1,
 };
 
 /*
@@ -143,6 +154,14 @@ enum io_uring_sqe_flags_bit {
 #define IOSQE_BUFFER_SELECT	(1U << IOSQE_BUFFER_SELECT_BIT)
 /* don't post CQE if request succeeded */
 #define IOSQE_CQE_SKIP_SUCCESS	(1U << IOSQE_CQE_SKIP_SUCCESS_BIT)
+/* ->flags2 is valid */
+#define IOSQE_FLAGS2		(1U << IOSQE_FLAGS2_BIT)
+
+/*
+ * sqe->flags2
+ */
+ /* if set, sqe->personality2 contains personality */
+#define IOSQE2_PERSONALITY	(1U << IOSQE2_PERSONALITY_BIT)
 
 /*
  * io_uring_setup() flags
