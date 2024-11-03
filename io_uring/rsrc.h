@@ -45,6 +45,8 @@ struct io_imu_folio_data {
 };
 
 struct io_rsrc_node *io_rsrc_node_alloc(struct io_ring_ctx *ctx, int type);
+void io_release_rsrc_node(struct io_rsrc_node *node);
+void __io_reap_rsrc_nodes(struct io_ring_ctx *ctx);
 void io_free_rsrc_node(struct io_rsrc_node *node);
 void io_rsrc_data_free(struct io_rsrc_data *data);
 int io_rsrc_data_alloc(struct io_rsrc_data *data, unsigned nr);
@@ -76,10 +78,20 @@ static inline struct io_rsrc_node *io_rsrc_node_lookup(struct io_rsrc_data *data
 	return NULL;
 }
 
+static inline void io_reap_rsrc_nodes(struct io_ring_ctx *ctx)
+{
+	if (ctx->rsrc_free_nr)
+		__io_reap_rsrc_nodes(ctx);
+}
+
+/*
+ * Reaping done at unregistration/removal time, hence no checking needed
+ * here - just drop the held reference.
+ */
 static inline void io_put_rsrc_node(struct io_rsrc_node *node)
 {
-	if (node && !--node->refs)
-		io_free_rsrc_node(node);
+	if (node)
+		node->refs--;
 }
 
 static inline bool io_reset_rsrc_node(struct io_rsrc_data *data, int index)
@@ -88,7 +100,7 @@ static inline bool io_reset_rsrc_node(struct io_rsrc_data *data, int index)
 
 	if (!node)
 		return false;
-	io_put_rsrc_node(node);
+	io_release_rsrc_node(node);
 	data->nodes[index] = NULL;
 	return true;
 }

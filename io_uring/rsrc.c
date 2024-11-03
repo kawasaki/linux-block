@@ -118,14 +118,67 @@ static void io_buffer_unmap(struct io_ring_ctx *ctx, struct io_rsrc_node *node)
 	}
 }
 
+void __io_reap_rsrc_nodes(struct io_ring_ctx *ctx)
+{
+	struct io_rsrc_node *node;
+	unsigned long index;
+
+	/* Find and reap nodes that hit zero refs */
+	xa_for_each(&ctx->rsrc_free, index, node) {
+		if (!node->refs)
+			io_free_rsrc_node(node);
+	}
+}
+
+void io_release_rsrc_node(struct io_rsrc_node *node)
+{
+	struct io_ring_ctx *ctx = io_rsrc_node_ctx(node);
+	unsigned long index = (unsigned long) node;
+
+	/*
+	 * If ref dropped to zero, nobody else has a reference to it and we
+	 * can safely free it. If it's non-zero, then someone else has a
+	 * reference and will put it at some point. As the put side is the
+	 * fast path, no checking is done there for the ref dropping to zero.
+	 * It just means that nobody else has it, and also that nobody else
+	 * can find it as it's been removed from the lookup table prior to
+	 * that. A ref dropping to zero as part of fast path node put cannot
+	 * happen without the unregister side having already stored the node
+	 * in ctx->rsrc_free.
+	 */
+	if (!--node->refs) {
+		io_free_rsrc_node(node);
+		return;
+	}
+
+	/*
+	 * If the free list already has an entry for this node, then it was
+	 * already stashed for cleanup. Just let the normal cleanup reap it.
+	 */
+	if (xa_load(&ctx->rsrc_free, index))
+		return;
+
+	/* Slot was reserved at registration time */
+	ctx->rsrc_free_nr++;
+	if (xa_store(&ctx->rsrc_free, index, node, GFP_NOWAIT))
+		WARN_ON_ONCE(1);
+}
+
 struct io_rsrc_node *io_rsrc_node_alloc(struct io_ring_ctx *ctx, int type)
 {
 	struct io_rsrc_node *node;
 
 	node = kzalloc(sizeof(*node), GFP_KERNEL);
 	if (node) {
-		node->ctx_ptr = (unsigned long) ctx | type;
-		node->refs = 1;
+		unsigned long index = (unsigned long) node;
+
+		if (!xa_reserve(&ctx->rsrc_free, index, GFP_KERNEL)) {
+			node->ctx_ptr = (unsigned long) ctx | type;
+			node->refs = 1;
+			return node;
+		}
+		kfree(node);
+		node = NULL;
 	}
 	return node;
 }
@@ -134,10 +187,8 @@ __cold void io_rsrc_data_free(struct io_rsrc_data *data)
 {
 	if (!data->nr)
 		return;
-	while (data->nr--) {
-		if (data->nodes[data->nr])
-			io_put_rsrc_node(data->nodes[data->nr]);
-	}
+	while (data->nr--)
+		io_reset_rsrc_node(data, data->nr);
 	kvfree(data->nodes);
 	data->nodes = NULL;
 	data->nr = 0;
@@ -465,6 +516,8 @@ void io_free_rsrc_node(struct io_rsrc_node *node)
 		break;
 	}
 
+	if (xa_erase(&ctx->rsrc_free, (unsigned long) node))
+		ctx->rsrc_free_nr--;
 	kfree(node);
 }
 
@@ -475,6 +528,7 @@ int io_sqe_files_unregister(struct io_ring_ctx *ctx)
 
 	io_free_file_tables(&ctx->file_table);
 	io_file_table_set_alloc_range(ctx, 0, 0);
+	io_reap_rsrc_nodes(ctx);
 	return 0;
 }
 
@@ -552,6 +606,7 @@ int io_sqe_buffers_unregister(struct io_ring_ctx *ctx)
 	if (!ctx->buf_table.nr)
 		return -ENXIO;
 	io_rsrc_data_free(&ctx->buf_table);
+	io_reap_rsrc_nodes(ctx);
 	return 0;
 }
 
@@ -788,7 +843,7 @@ done:
 	if (ret) {
 		kvfree(imu);
 		if (node)
-			io_put_rsrc_node(node);
+			io_release_rsrc_node(node);
 		node = ERR_PTR(ret);
 	}
 	kvfree(pages);
@@ -1038,8 +1093,8 @@ static int io_clone_buffers(struct io_ring_ctx *ctx, struct io_ring_ctx *src_ctx
 out_put_free:
 	i = data.nr;
 	while (i--) {
-		io_buffer_unmap(src_ctx, data.nodes[i]);
-		kfree(data.nodes[i]);
+		if (data.nodes[i])
+			io_free_rsrc_node(data.nodes[i]);
 	}
 out_unlock:
 	io_rsrc_data_free(&data);

@@ -293,6 +293,7 @@ static __cold struct io_ring_ctx *io_ring_ctx_alloc(struct io_uring_params *p)
 		return NULL;
 
 	xa_init(&ctx->io_bl_xa);
+	xa_init(&ctx->rsrc_free);
 
 	/*
 	 * Use 5 bits less than the max cq entries, that should give us around
@@ -366,6 +367,7 @@ err:
 	io_futex_cache_free(ctx);
 	kvfree(ctx->cancel_table.hbs);
 	xa_destroy(&ctx->io_bl_xa);
+	xa_destroy(&ctx->rsrc_free);
 	kfree(ctx);
 	return NULL;
 }
@@ -1562,6 +1564,8 @@ static void io_free_batch_list(struct io_ring_ctx *ctx,
 		node = req->comp_list.next;
 		io_req_add_to_cache(req, ctx);
 	} while (node);
+
+	io_reap_rsrc_nodes(ctx);
 }
 
 void __io_submit_flush_completions(struct io_ring_ctx *ctx)
@@ -3009,6 +3013,7 @@ static __cold void io_ring_ctx_free(struct io_ring_ctx *ctx)
 	io_futex_cache_free(ctx);
 	io_destroy_buffers(ctx);
 	io_unregister_cqwait_reg(ctx);
+	io_reap_rsrc_nodes(ctx);
 	mutex_unlock(&ctx->uring_lock);
 	if (ctx->sq_creds)
 		put_cred(ctx->sq_creds);
@@ -3034,6 +3039,9 @@ static __cold void io_ring_ctx_free(struct io_ring_ctx *ctx)
 	io_napi_free(ctx);
 	kvfree(ctx->cancel_table.hbs);
 	xa_destroy(&ctx->io_bl_xa);
+	WARN_ON_ONCE(!xa_empty(&ctx->rsrc_free));
+	WARN_ON_ONCE(ctx->rsrc_free_nr);
+	xa_destroy(&ctx->rsrc_free);
 	kfree(ctx);
 }
 

@@ -320,6 +320,13 @@ struct io_ring_ctx {
 		unsigned		cq_entries;
 		struct io_ev_fd	__rcu	*io_ev_fd;
 		unsigned		cq_extra;
+
+		/*
+		 * Deferred free of io_rsrc_node entries that were busy
+		 * at the time of unregistration.
+		 */
+		unsigned int		rsrc_free_nr;
+		struct xarray		rsrc_free;
 	} ____cacheline_aligned_in_smp;
 
 	/*
