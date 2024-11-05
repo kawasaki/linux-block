@@ -430,6 +430,7 @@ int __filemap_fdatawrite_range(struct address_space *mapping, loff_t start,
 
 	return filemap_fdatawrite_wbc(mapping, &wbc);
 }
+EXPORT_SYMBOL_GPL(__filemap_fdatawrite_range);
 
 static inline int __filemap_fdatawrite(struct address_space *mapping,
 	int sync_mode)
@@ -4076,7 +4077,7 @@ ssize_t generic_perform_write(struct kiocb *iocb, struct iov_iter *i)
 	ssize_t written = 0;
 
 	do {
-		struct folio *folio;
+		struct folio *folio = NULL;
 		size_t offset;		/* Offset into folio */
 		size_t bytes;		/* Bytes to write to folio */
 		size_t copied;		/* Bytes copied from user */
@@ -4103,6 +4104,16 @@ retry:
 			status = -EINTR;
 			break;
 		}
+
+		/*
+		 * If IOCB_UNCACHED is set here, we now the file system
+		 * supports it. And hence it'll know to check folip for being
+		 * set to this magic value. If so, it's an uncached write.
+		 * Whenever ->write_begin() changes prototypes again, this
+		 * can go away and just pass iocb or iocb flags.
+		 */
+		if (iocb->ki_flags & IOCB_UNCACHED)
+			folio = foliop_uncached;
 
 		status = a_ops->write_begin(file, mapping, pos, bytes,
 						&folio, &fsdata);
@@ -4234,8 +4245,10 @@ ssize_t generic_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 		ret = __generic_file_write_iter(iocb, from);
 	inode_unlock(inode);
 
-	if (ret > 0)
+	if (ret > 0) {
+		generic_uncached_write(iocb, ret);
 		ret = generic_write_sync(iocb, ret);
+	}
 	return ret;
 }
 EXPORT_SYMBOL(generic_file_write_iter);
