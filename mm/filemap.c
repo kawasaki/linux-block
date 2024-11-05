@@ -1610,6 +1610,8 @@ EXPORT_SYMBOL(folio_wait_private_2_killable);
  */
 void folio_end_writeback(struct folio *folio)
 {
+	bool folio_uncached;
+
 	VM_BUG_ON_FOLIO(!folio_test_writeback(folio), folio);
 
 	/*
@@ -1631,6 +1633,7 @@ void folio_end_writeback(struct folio *folio)
 	 * reused before the folio_wake_bit().
 	 */
 	folio_get(folio);
+	folio_uncached = folio_test_clear_uncached(folio);
 	if (__folio_end_writeback(folio))
 		folio_wake_bit(folio, PG_writeback);
 	acct_reclaim_writeback(folio);
@@ -1639,12 +1642,10 @@ void folio_end_writeback(struct folio *folio)
 	 * If folio is marked as uncached, then pages should be dropped when
 	 * writeback completes. Do that now.
 	 */
-	if (folio_test_uncached(folio)) {
-		folio_lock(folio);
-		if (invalidate_complete_folio2(folio->mapping, folio, 0))
-			folio_clear_uncached(folio);
+	if (folio_uncached && folio_trylock(folio)) {
+		if (folio->mapping)
+			invalidate_complete_folio2(folio->mapping, folio, 0);
 		folio_unlock(folio);
-
 	}
 	folio_put(folio);
 }
@@ -4082,6 +4083,9 @@ retry:
 		if (unlikely(status < 0))
 			break;
 
+		if (iocb->ki_flags & IOCB_UNCACHED)
+			folio_set_uncached(folio);
+
 		offset = offset_in_folio(folio, pos);
 		if (bytes > folio_size(folio) - offset)
 			bytes = folio_size(folio) - offset;
@@ -4122,6 +4126,12 @@ retry:
 
 	if (!written)
 		return status;
+	if (iocb->ki_flags & IOCB_UNCACHED) {
+		/* kick off uncached writeback, completion will drop it */
+		__filemap_fdatawrite_range(mapping, iocb->ki_pos,
+						iocb->ki_pos + written,
+						WB_SYNC_NONE);
+	}
 	iocb->ki_pos += written;
 	return written;
 }
