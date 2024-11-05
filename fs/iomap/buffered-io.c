@@ -959,6 +959,8 @@ retry:
 		}
 		if (iter->iomap.flags & IOMAP_F_STALE)
 			break;
+		if (iter->flags & IOMAP_UNCACHED)
+			folio_set_uncached(folio);
 
 		offset = offset_in_folio(folio, pos);
 		if (bytes > folio_size(folio) - offset)
@@ -1023,8 +1025,9 @@ ssize_t
 iomap_file_buffered_write(struct kiocb *iocb, struct iov_iter *i,
 		const struct iomap_ops *ops, void *private)
 {
+	struct address_space *mapping = iocb->ki_filp->f_mapping;
 	struct iomap_iter iter = {
-		.inode		= iocb->ki_filp->f_mapping->host,
+		.inode		= mapping->host,
 		.pos		= iocb->ki_pos,
 		.len		= iov_iter_count(i),
 		.flags		= IOMAP_WRITE,
@@ -1034,12 +1037,19 @@ iomap_file_buffered_write(struct kiocb *iocb, struct iov_iter *i,
 
 	if (iocb->ki_flags & IOCB_NOWAIT)
 		iter.flags |= IOMAP_NOWAIT;
+	if (iocb->ki_flags & IOCB_UNCACHED)
+		iter.flags |= IOMAP_UNCACHED;
 
 	while ((ret = iomap_iter(&iter, ops)) > 0)
 		iter.processed = iomap_write_iter(&iter, i);
 
 	if (unlikely(iter.pos == iocb->ki_pos))
 		return ret;
+	if (iocb->ki_flags & IOCB_UNCACHED) {
+		/* kick off uncached writeback, completion will drop it */
+		__filemap_fdatawrite_range(mapping, iocb->ki_pos, iter.pos,
+						WB_SYNC_NONE);
+	}
 	ret = iter.pos - iocb->ki_pos;
 	iocb->ki_pos = iter.pos;
 	return ret;
