@@ -4042,6 +4042,7 @@ ssize_t generic_perform_write(struct kiocb *iocb, struct iov_iter *i)
 	struct address_space *mapping = file->f_mapping;
 	const struct address_space_operations *a_ops = mapping->a_ops;
 	size_t chunk = mapping_max_folio_size(mapping);
+	bool uncached = iocb->ki_flags & IOCB_UNCACHED;
 	long status = 0;
 	ssize_t written = 0;
 
@@ -4078,6 +4079,16 @@ retry:
 						&folio, &fsdata);
 		if (unlikely(status < 0))
 			break;
+
+		if (uncached) {
+			/*
+			 * Legacy cases that use buffer_heads cannot sanely be
+			 * reclaimed at writeback completion, skip them.
+			 */
+			uncached = !folio_buffers(folio);
+			if (uncached)
+				folio_set_drop_writeback(folio);
+		}
 
 		offset = offset_in_folio(folio, pos);
 		if (bytes > folio_size(folio) - offset)
@@ -4119,6 +4130,13 @@ retry:
 
 	if (!written)
 		return status;
+	if (uncached) {
+		loff_t end = iocb->ki_pos + written;
+
+		/* kick off uncached writeback, completion will drop it */
+		__filemap_fdatawrite_range(mapping, iocb->ki_pos, end,
+						WB_SYNC_NONE);
+	}
 	iocb->ki_pos += written;
 	return written;
 }
