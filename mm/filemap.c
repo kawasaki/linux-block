@@ -1635,6 +1635,21 @@ void folio_end_writeback(struct folio *folio)
 	if (__folio_end_writeback(folio))
 		folio_wake_bit(folio, PG_writeback);
 	acct_reclaim_writeback(folio);
+
+	/*
+	 * If folio is marked as uncached, then pages should be dropped when
+	 * writeback completes. Do that now.
+	 */
+	if (folio_test_uncached(folio)) {
+		int ret;
+
+		folio_lock(folio);
+		ret = mapping_evict_folio(folio->mapping, folio);
+		if (ret)
+			folio_clear_uncached(folio);
+		folio_unlock(folio);
+
+	}
 	folio_put(folio);
 }
 EXPORT_SYMBOL(folio_end_writeback);
