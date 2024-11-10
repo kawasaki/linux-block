@@ -902,6 +902,8 @@ static noinline int prepare_one_folio(struct inode *inode, struct folio **folio_
 	struct folio *folio;
 	int ret = 0;
 
+	if (foliop_is_uncached(folio_ret))
+		fgp_flags |= FGP_UNCACHED;
 again:
 	folio = __filemap_get_folio(inode->i_mapping, index, fgp_flags, mask);
 	if (IS_ERR(folio)) {
@@ -1229,6 +1231,9 @@ again:
 			btrfs_delalloc_release_extents(BTRFS_I(inode), reserve_bytes);
 			break;
 		}
+
+		if (iocb->ki_flags & IOCB_UNCACHED)
+			folio = foliop_uncached;
 
 		ret = prepare_one_folio(inode, &folio, pos, write_bytes,
 					force_page_uptodate, false);
@@ -3694,7 +3699,7 @@ const struct file_operations btrfs_file_operations = {
 #endif
 	.remap_file_range = btrfs_remap_file_range,
 	.uring_cmd	= btrfs_uring_cmd,
-	.fop_flags	= FOP_BUFFER_RASYNC | FOP_BUFFER_WASYNC,
+	.fop_flags	= FOP_BUFFER_RASYNC | FOP_BUFFER_WASYNC | FOP_UNCACHED,
 };
 
 int btrfs_fdatawrite_range(struct btrfs_inode *inode, loff_t start, loff_t end)
