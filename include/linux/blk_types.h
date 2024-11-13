@@ -74,6 +74,14 @@ struct block_device {
 #ifdef CONFIG_SECURITY
 	void			*bd_security;
 #endif
+
+	/*
+	 * For punting of uncached buffered writes to a workqueue context
+	 */
+	struct bio		*uncached_list;
+	spinlock_t		uncached_lock;
+	struct work_struct	uncached_work;
+
 	/*
 	 * keep this out-of-line as it's both big and not needed in the fast
 	 * path

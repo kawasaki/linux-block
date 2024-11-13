@@ -1522,8 +1522,43 @@ EXPORT_SYMBOL_GPL(bio_set_pages_dirty);
 static void bio_dirty_fn(struct work_struct *work);
 
 static DECLARE_WORK(bio_dirty_work, bio_dirty_fn);
-static DEFINE_SPINLOCK(bio_dirty_lock);
 static struct bio *bio_dirty_list;
+static DEFINE_SPINLOCK(bio_dirty_lock);
+
+void bio_uncache_work(struct work_struct *work)
+{
+	struct block_device *bdev;
+	struct bio *bio, *next;
+
+	bdev = container_of(work, struct block_device, uncached_work);
+	spin_lock_irq(&bdev->uncached_lock);
+	next = bdev->uncached_list;
+	bdev->uncached_list = NULL;
+	spin_unlock_irq(&bdev->uncached_lock);
+
+	while ((bio = next) != NULL) {
+		struct buffer_head *bh = bio->bi_private;
+
+		next = bio->bi_next;
+		bh->b_end_io(bh, !bio->bi_status);
+		bio_put(bio);
+	}
+}
+
+void bio_reap_uncached_write(struct bio *bio)
+{
+	struct block_device *bdev = bio->bi_bdev;
+	unsigned long flags;
+	bool was_empty;
+
+	spin_lock_irqsave(&bdev->uncached_lock, flags);
+	bio->bi_next = bdev->uncached_list;
+	bdev->uncached_list = bio;
+	was_empty = !bio->bi_next;
+	spin_unlock_irqrestore(&bdev->uncached_lock, flags);
+	if (was_empty)
+		schedule_work(&bdev->uncached_work);
+}
 
 /*
  * This runs in process context

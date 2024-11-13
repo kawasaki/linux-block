@@ -2763,8 +2763,13 @@ static void end_bio_bh_io_sync(struct bio *bio)
 	if (unlikely(bio_flagged(bio, BIO_QUIET)))
 		set_bit(BH_Quiet, &bh->b_state);
 
-	bh->b_end_io(bh, !bio->bi_status);
-	bio_put(bio);
+	if (op_is_write(bio_op(bio)) &&
+	    folio_test_uncached(page_folio(bh->b_page))) {
+		bio_reap_uncached_write(bio);
+	} else {
+		bh->b_end_io(bh, !bio->bi_status);
+		bio_put(bio);
+	}
 }
 
 static void submit_bh_wbc(blk_opf_t opf, struct buffer_head *bh,

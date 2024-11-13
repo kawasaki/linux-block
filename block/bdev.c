@@ -439,6 +439,9 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
 		iput(inode);
 		return NULL;
 	}
+	bdev->uncached_list = NULL;
+	INIT_WORK(&bdev->uncached_work, bio_uncache_work);
+	spin_lock_init(&bdev->uncached_lock);
 	bdev->bd_disk = disk;
 	return bdev;
 }
