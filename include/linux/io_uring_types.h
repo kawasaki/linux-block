@@ -335,8 +335,9 @@ struct io_ring_ctx {
 	 * regularly bounce b/w CPUs.
 	 */
 	struct {
-		struct llist_head	work_llist;
-		struct llist_head	retry_llist;
+		struct io_wq_work_list	work_list;
+		spinlock_t		work_lock;
+		int			work_items;
 		unsigned long		check_cq;
 		atomic_t		cq_wait_nr;
 		atomic_t		cq_timeouts;
@@ -566,7 +567,11 @@ enum {
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, struct io_tw_state *ts);
 
 struct io_task_work {
-	struct llist_node		node;
+	/* DEFER_TASKRUN uses work_node, regular task_work node */
+	union {
+		struct io_wq_work_node	work_node;
+		struct llist_node	node;
+	};
 	io_req_tw_func_t		func;
 };
 
@@ -621,8 +626,6 @@ struct io_kiocb {
 	 * and after selection it points to the buffer ID itself.
 	 */
 	u16				buf_index;
-
-	unsigned			nr_tw;
 
 	/* REQ_F_* flags */
 	io_req_flags_t			flags;
