@@ -354,7 +354,9 @@ static inline bool io_local_work_pending(struct io_ring_ctx *ctx)
 
 static inline bool io_task_work_pending(struct io_ring_ctx *ctx)
 {
-	return task_work_pending(current) || io_local_work_pending(ctx);
+	if (ctx->flags & IORING_SETUP_DEFER_TASKRUN && io_local_work_pending(ctx))
+		return true;
+	return task_work_pending(current);
 }
 
 static inline void io_tw_lock(struct io_ring_ctx *ctx, struct io_tw_state *ts)
