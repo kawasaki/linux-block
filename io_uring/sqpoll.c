@@ -221,29 +221,29 @@ static bool io_sqd_handle_event(struct io_sq_data *sqd)
  * than we were asked to process. Newly queued task_work isn't run until the
  * retry list has been fully processed.
  */
-static unsigned int io_sq_tw(struct io_wq_work_node **retry_list, int max_entries)
+static unsigned int io_sq_tw(struct io_wq_work_list *retry_list, int max_entries)
 {
 	struct io_uring_task *tctx = current->io_uring;
 	unsigned int count = 0;
 
-	if (*retry_list) {
-		*retry_list = io_handle_tw_list(*retry_list, &count, max_entries);
+	if (!wq_list_empty(retry_list)) {
+		io_handle_tw_list(retry_list, &count, max_entries);
 		if (count >= max_entries)
 			goto out;
 		max_entries -= count;
 	}
-	*retry_list = __tctx_task_work_run(tctx, max_entries, &count);
+	__tctx_task_work_run(tctx, retry_list, max_entries, &count);
 out:
 	if (task_work_pending(current))
 		task_work_run();
 	return count;
 }
 
-static bool io_sq_tw_pending(struct io_wq_work_node *retry_list)
+static bool io_sq_tw_pending(struct io_wq_work_list *retry_list)
 {
 	struct io_uring_task *tctx = current->io_uring;
 
-	return retry_list || READ_ONCE(tctx->task_list.first);
+	return !wq_list_empty(retry_list) || !wq_list_empty(&tctx->task_list);
 }
 
 static void io_sq_update_worktime(struct io_sq_data *sqd, struct rusage *start)
@@ -259,7 +259,7 @@ static void io_sq_update_worktime(struct io_sq_data *sqd, struct rusage *start)
 
 static int io_sq_thread(void *data)
 {
-	struct io_wq_work_node *retry_list = NULL;
+	struct io_wq_work_list retry_list;
 	struct io_sq_data *sqd = data;
 	struct io_ring_ctx *ctx;
 	struct rusage start;
@@ -292,6 +292,7 @@ static int io_sq_thread(void *data)
 	audit_uring_entry(IORING_OP_NOP);
 	audit_uring_exit(true, 0);
 
+	INIT_WQ_LIST(&retry_list);
 	mutex_lock(&sqd->lock);
 	while (1) {
 		bool cap_entries, sqt_spin = false;
@@ -332,7 +333,8 @@ static int io_sq_thread(void *data)
 		}
 
 		prepare_to_wait(&sqd->wait, &wait, TASK_INTERRUPTIBLE);
-		if (!io_sqd_events_pending(sqd) && !io_sq_tw_pending(retry_list)) {
+		if (!io_sqd_events_pending(sqd) &&
+		    !io_sq_tw_pending(&retry_list)) {
 			bool needs_sched = true;
 
 			list_for_each_entry(ctx, &sqd->ctx_list, sqd_list) {
@@ -371,7 +373,7 @@ static int io_sq_thread(void *data)
 		timeout = jiffies + sqd->sq_thread_idle;
 	}
 
-	if (retry_list)
+	if (!wq_list_empty(&retry_list))
 		io_sq_tw(&retry_list, UINT_MAX);
 
 	io_uring_cancel_generic(true, sqd);

@@ -1044,20 +1044,20 @@ static void ctx_flush_and_put(struct io_ring_ctx *ctx, struct io_tw_state *ts)
 /*
  * Run queued task_work, returning the number of entries processed in *count.
  * If more entries than max_entries are available, stop processing once this
- * is reached and return the rest of the list.
+ * is reached.
  */
-struct io_wq_work_node *io_handle_tw_list(struct io_wq_work_node *node,
-					  unsigned int *count,
-					  unsigned int max_entries)
+void io_handle_tw_list(struct io_wq_work_list *list, unsigned int *count,
+		       unsigned int max_entries)
 {
 	struct io_ring_ctx *ctx = NULL;
 	struct io_tw_state ts = { };
 
 	do {
-		struct io_wq_work_node *next = node->next;
+		struct io_wq_work_node *node = list->first;
 		struct io_kiocb *req = container_of(node, struct io_kiocb,
 						    io_task_work.node);
 
+		list->first = node->next;
 		if (req->ctx != ctx) {
 			ctx_flush_and_put(ctx, &ts);
 			ctx = req->ctx;
@@ -1067,17 +1067,15 @@ struct io_wq_work_node *io_handle_tw_list(struct io_wq_work_node *node,
 		INDIRECT_CALL_2(req->io_task_work.func,
 				io_poll_task_func, io_req_rw_complete,
 				req, &ts);
-		node = next;
 		(*count)++;
 		if (unlikely(need_resched())) {
 			ctx_flush_and_put(ctx, &ts);
 			ctx = NULL;
 			cond_resched();
 		}
-	} while (node && *count < max_entries);
+	} while (list->first && *count < max_entries);
 
 	ctx_flush_and_put(ctx, &ts);
-	return node;
 }
 
 static __cold void __io_fallback_schedule(struct io_ring_ctx *ctx,
@@ -1137,41 +1135,39 @@ static void io_fallback_tw(struct io_uring_task *tctx, bool sync)
 	__io_fallback_tw(&tctx->task_list, &tctx->task_lock, sync);
 }
 
-struct io_wq_work_node *__tctx_task_work_run(struct io_uring_task *tctx,
-					     unsigned int max_entries,
-					     unsigned int *count)
+void __tctx_task_work_run(struct io_uring_task *tctx,
+			  struct io_wq_work_list *list,
+			  unsigned int max_entries, unsigned int *count)
 {
-	struct io_wq_work_node *node;
-
 	if (unlikely(current->flags & PF_EXITING)) {
 		io_fallback_tw(tctx, true);
-		return NULL;
+		return;
 	}
 
 	if (!READ_ONCE(tctx->task_list.first))
-		return NULL;
+		return;
 
 	spin_lock_irq(&tctx->task_lock);
-	node = tctx->task_list.first;
+	*list = tctx->task_list;
 	INIT_WQ_LIST(&tctx->task_list);
 	spin_unlock_irq(&tctx->task_lock);
 
-	if (node)
-		node = io_handle_tw_list(node, count, max_entries);
+	if (!wq_list_empty(list))
+		io_handle_tw_list(list, count, max_entries);
 
 	/* relaxed read is enough as only the task itself sets ->in_cancel */
 	if (unlikely(atomic_read(&tctx->in_cancel)))
 		io_uring_drop_tctx_refs(current);
 
 	trace_io_uring_task_work_run(tctx, *count);
-	return node;
 }
 
 unsigned int tctx_task_work_run(struct io_uring_task *tctx)
 {
+	struct io_wq_work_list list;
 	unsigned int count = 0;
 
-	__tctx_task_work_run(tctx, UINT_MAX, &count);
+	__tctx_task_work_run(tctx, &list, UINT_MAX, &count);
 	return count;
 }
 
