@@ -44,9 +44,20 @@ struct io_wq_work_node {
 	struct io_wq_work_node *next;
 };
 
+#ifdef CONFIG_64BIT
+typedef u128 io_wq_list_ptr_t;
+#else
+typedef u64 io_wq_list_ptr_t;
+#endif
+
 struct io_wq_work_list {
-	struct io_wq_work_node *first;
-	struct io_wq_work_node *last;
+	union {
+		struct {
+			struct io_wq_work_node *first;
+			struct io_wq_work_node *last;
+		};
+		io_wq_list_ptr_t list_ptr;
+	};
 };
 
 struct io_wq_work {
