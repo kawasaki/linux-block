@@ -85,6 +85,22 @@ static inline bool wq_list_splice(struct io_wq_work_list *list,
 	return false;
 }
 
+static inline bool wq_list_splice_list(struct io_wq_work_list *src,
+				       struct io_wq_work_list *dst)
+{
+	bool ret = false;
+
+	if (wq_list_empty(dst)) {
+		*dst = *src;
+	} else {
+		dst->last->next = src->first;
+		dst->last = src->last;
+		ret = true;
+	}
+	INIT_WQ_LIST(src);
+	return false;
+}
+
 static inline void wq_stack_add_head(struct io_wq_work_node *node,
 				     struct io_wq_work_node *stack)
 {
