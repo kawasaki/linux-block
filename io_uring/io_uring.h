@@ -93,8 +93,9 @@ void io_req_task_queue_fail(struct io_kiocb *req, int ret);
 void io_req_task_submit(struct io_kiocb *req, struct io_tw_state *ts);
 struct io_wq_work_node *io_handle_tw_list(struct io_wq_work_node *node,
 	unsigned int *count, unsigned int max_entries);
-struct io_wq_work_node *tctx_task_work_run(struct io_uring_task *tctx,
+struct io_wq_work_node *__tctx_task_work_run(struct io_uring_task *tctx,
 	unsigned int max_entries, unsigned int *count);
+unsigned int tctx_task_work_run(struct io_uring_task *tctx);
 void tctx_task_work(struct callback_head *cb);
 __cold void io_uring_cancel_generic(bool cancel_all, struct io_sq_data *sqd);
 int io_uring_alloc_task_context(struct task_struct *task,
@@ -332,12 +333,8 @@ static inline int io_run_task_work(void)
 			resume_user_mode_work(NULL);
 		}
 		if (current->io_uring) {
-			unsigned int count = 0;
-
 			__set_current_state(TASK_RUNNING);
-			tctx_task_work_run(current->io_uring, UINT_MAX, &count);
-			if (count)
-				ret = true;
+			ret = tctx_task_work_run(current->io_uring) != 0;
 		}
 	}
 	if (task_work_pending(current)) {

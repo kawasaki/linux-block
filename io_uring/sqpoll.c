@@ -232,7 +232,7 @@ static unsigned int io_sq_tw(struct io_wq_work_node **retry_list, int max_entrie
 			goto out;
 		max_entries -= count;
 	}
-	*retry_list = tctx_task_work_run(tctx, max_entries, &count);
+	*retry_list = __tctx_task_work_run(tctx, max_entries, &count);
 out:
 	if (task_work_pending(current))
 		task_work_run();

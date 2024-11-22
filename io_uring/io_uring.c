@@ -1137,9 +1137,9 @@ static void io_fallback_tw(struct io_uring_task *tctx, bool sync)
 	__io_fallback_tw(&tctx->task_list, &tctx->task_lock, sync);
 }
 
-struct io_wq_work_node *tctx_task_work_run(struct io_uring_task *tctx,
-					   unsigned int max_entries,
-					   unsigned int *count)
+struct io_wq_work_node *__tctx_task_work_run(struct io_uring_task *tctx,
+					     unsigned int max_entries,
+					     unsigned int *count)
 {
 	struct io_wq_work_node *node;
 
@@ -1167,14 +1167,20 @@ struct io_wq_work_node *tctx_task_work_run(struct io_uring_task *tctx,
 	return node;
 }
 
+unsigned int tctx_task_work_run(struct io_uring_task *tctx)
+{
+	unsigned int count = 0;
+
+	__tctx_task_work_run(tctx, UINT_MAX, &count);
+	return count;
+}
+
 void tctx_task_work(struct callback_head *cb)
 {
 	struct io_uring_task *tctx;
-	unsigned int count = 0;
 
 	tctx = container_of(cb, struct io_uring_task, task_work);
-	if (tctx_task_work_run(tctx, UINT_MAX, &count))
-		WARN_ON_ONCE(1);
+	tctx_task_work_run(tctx);
 }
 
 static inline void io_req_local_work_add(struct io_kiocb *req,
