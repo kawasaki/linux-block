@@ -102,7 +102,8 @@ struct io_uring_task {
 	struct percpu_counter		inflight;
 
 	struct { /* task_work */
-		struct llist_head	task_list;
+		struct io_wq_work_list	task_list;
+		spinlock_t		task_lock;
 		struct callback_head	task_work;
 	} ____cacheline_aligned_in_smp;
 };
@@ -390,8 +391,9 @@ struct io_ring_ctx {
 	struct mm_struct		*mm_account;
 
 	/* ctx exit and cancelation */
-	struct llist_head		fallback_llist;
-	struct delayed_work		fallback_work;
+	struct io_wq_work_list		fallback_list;
+	spinlock_t			fallback_lock;
+	struct work_struct		fallback_work;
 	struct work_struct		exit_work;
 	struct list_head		tctx_list;
 	struct completion		ref_comp;
@@ -567,11 +569,7 @@ enum {
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, struct io_tw_state *ts);
 
 struct io_task_work {
-	/* DEFER_TASKRUN uses work_node, regular task_work node */
-	union {
-		struct io_wq_work_node	work_node;
-		struct llist_node	node;
-	};
+	struct io_wq_work_node		node;
 	io_req_tw_func_t		func;
 };
 
