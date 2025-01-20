@@ -272,8 +272,12 @@ int blk_validate_limits(struct queue_limits *lim)
 	 * The optimal I/O size may not be aligned to physical block size
 	 * (because it may be limited by dma engines which have no clue about
 	 * block size of the disks attached to them), so we round it down here.
+	 *
+	 * Note that some SSDs erroneously report physical_block_size 512
+	 * despite the fact that they have remapping table granularity 4K and
+	 * they perform read-modify-write for unaligned requests.
 	 */
-	lim->io_opt = round_down(lim->io_opt, lim->physical_block_size);
+	lim->io_opt = round_down(lim->io_opt, max(4096, lim->physical_block_size));
 
 	/*
 	 * max_hw_sectors has a somewhat weird default for historical reason,
