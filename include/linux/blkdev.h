@@ -561,7 +561,6 @@ struct request_queue {
 	struct list_head	flush_list;
 
 	struct mutex		sysfs_lock;
-	struct mutex		sysfs_dir_lock;
 	struct mutex		limits_lock;
 
 	/*
@@ -606,7 +605,7 @@ struct request_queue {
 	 */
 	struct mutex		debugfs_mutex;
 
-	bool			mq_sysfs_init_done;
+	atomic_t		mq_sysfs_init_done;
 };
 
 /* Keep blk_queue_flag_name[] in sync with the definitions below */
