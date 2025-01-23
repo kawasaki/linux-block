@@ -229,21 +229,30 @@ int blk_mq_sysfs_register(struct gendisk *disk)
 
 	kobject_uevent(q->mq_kobj, KOBJ_ADD);
 
+	mutex_lock(&q->tag_set->tag_list_lock);
+
 	queue_for_each_hw_ctx(q, hctx, i) {
 		ret = blk_mq_register_hctx(hctx);
-		if (ret)
+		if (ret) {
+			mutex_unlock(&q->tag_set->tag_list_lock);
 			goto unreg;
+		}
 	}
 
+	mutex_unlock(&q->tag_set->tag_list_lock);
 
 out:
 	return ret;
 
 unreg:
+	mutex_lock(&q->tag_set->tag_list_lock);
+
 	queue_for_each_hw_ctx(q, hctx, j) {
 		if (j < i)
 			blk_mq_unregister_hctx(hctx);
 	}
+
+	mutex_unlock(&q->tag_set->tag_list_lock);
 
 	kobject_uevent(q->mq_kobj, KOBJ_REMOVE);
 	kobject_del(q->mq_kobj);
@@ -256,9 +265,12 @@ void blk_mq_sysfs_unregister(struct gendisk *disk)
 	struct blk_mq_hw_ctx *hctx;
 	unsigned long i;
 
+	mutex_lock(&q->tag_set->tag_list_lock);
 
 	queue_for_each_hw_ctx(q, hctx, i)
 		blk_mq_unregister_hctx(hctx);
+
+	mutex_unlock(&q->tag_set->tag_list_lock);
 
 	kobject_uevent(q->mq_kobj, KOBJ_REMOVE);
 	kobject_del(q->mq_kobj);
