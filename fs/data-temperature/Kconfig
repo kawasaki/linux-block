@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config DATA_TEMPERATURE
+	bool "Data temperature approach for efficient data placement"
+	help
+	  Enable data "temperature" estimation for efficient data
+	  placement policy. This approach is file based and
+	  it estimates "temperature" for every file independently.
+	  The goal of the approach is to provide valuable hints
+	  to file system or/and SSD for isolation and proper
+	  managament of data with different temperatures.

@@ -38,6 +38,7 @@
 #include <linux/sched/rt.h>
 #include <linux/sched/signal.h>
 #include <linux/mm_inline.h>
+#include <linux/data_temperature.h>
 #include <trace/events/writeback.h>
 
 #include "internal.h"
@@ -2754,6 +2755,10 @@ static void folio_account_dirtied(struct folio *folio,
 		__this_cpu_add(bdp_ratelimits, nr);
 
 		mem_cgroup_track_foreign_dirty(folio, wb);
+
+#ifdef CONFIG_DATA_TEMPERATURE
+		increase_data_temperature_by_dirty_folio(folio);
+#endif	/* CONFIG_DATA_TEMPERATURE */
 	}
 }
 
@@ -2984,6 +2989,10 @@ bool folio_clear_dirty_for_io(struct folio *folio)
 	bool ret = false;
 
 	VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
+
+#ifdef CONFIG_DATA_TEMPERATURE
+	account_flushed_folio_by_data_temperature(folio);
+#endif	/* CONFIG_DATA_TEMPERATURE */
 
 	if (mapping && mapping_can_writeback(mapping)) {
 		struct inode *inode = mapping->host;

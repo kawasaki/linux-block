@@ -785,6 +785,10 @@ struct inode {
 	struct fsverity_info	*i_verity_info;
 #endif
 
+#ifdef CONFIG_DATA_TEMPERATURE
+	struct data_temperature		*i_data_temperature_info;
+#endif
+
 	void			*i_private; /* fs or device private pointer */
 } __randomize_layout;
 
