@@ -1404,6 +1404,8 @@ void bio_set_pages_dirty(struct bio *bio)
 	struct folio_iter fi;
 
 	bio_for_each_folio_all(fi, bio) {
+		if (folio_test_dirty(fi.folio))
+			continue;
 		folio_lock(fi.folio);
 		folio_mark_dirty(fi.folio);
 		folio_unlock(fi.folio);
