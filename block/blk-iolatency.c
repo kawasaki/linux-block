@@ -789,6 +789,8 @@ err_free:
 static void iolatency_set_min_lat_nsec(struct blkcg_gq *blkg, u64 val)
 {
 	struct iolatency_grp *iolat = blkg_to_lat(blkg);
+	if (!iolat)
+		return;
 	struct blk_iolatency *blkiolat = iolat->blkiolat;
 	u64 oldval = iolat->min_lat_nsec;
 
@@ -1015,6 +1017,8 @@ static void iolatency_pd_init(struct blkg_policy_data *pd)
 	 */
 	if (blkg->parent && blkg_to_pd(blkg->parent, &blkcg_policy_iolatency)) {
 		struct iolatency_grp *parent = blkg_to_lat(blkg->parent);
+		if (!parent)
+			return;
 		atomic_set(&iolat->scale_cookie,
 			   atomic_read(&parent->child_lat.scale_cookie));
 	} else {
