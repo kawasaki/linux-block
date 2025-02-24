@@ -212,62 +212,65 @@ typedef unsigned int blk_qc_t;
  * stacking drivers)
  */
 struct bio {
-	struct bio		*bi_next;	/* request queue link */
-	struct block_device	*bi_bdev;
-	blk_opf_t		bi_opf;		/* bottom bits REQ_OP, top bits
-						 * req_flags.
-						 */
-	unsigned short		bi_flags;	/* BIO_* below */
-	unsigned short		bi_ioprio;
-	enum rw_hint		bi_write_hint;
-	blk_status_t		bi_status;
-	atomic_t		__bi_remaining;
+	/* New members MUST be added within the struct_group() macro below. */
+	struct_group_tagged(bio_hdr, __hdr,
+		struct bio		*bi_next;	/* request queue link */
+		struct block_device	*bi_bdev;
+		blk_opf_t		bi_opf;		/* bottom bits REQ_OP, top bits
+							 * req_flags.
+							 */
+		unsigned short		bi_flags;	/* BIO_* below */
+		unsigned short		bi_ioprio;
+		enum rw_hint		bi_write_hint;
+		blk_status_t		bi_status;
+		atomic_t		__bi_remaining;
 
-	struct bvec_iter	bi_iter;
+		struct bvec_iter	bi_iter;
 
-	union {
-		/* for polled bios: */
-		blk_qc_t		bi_cookie;
-		/* for plugged zoned writes only: */
-		unsigned int		__bi_nr_segments;
-	};
-	bio_end_io_t		*bi_end_io;
-	void			*bi_private;
+		union {
+			/* for polled bios: */
+			blk_qc_t		bi_cookie;
+			/* for plugged zoned writes only: */
+			unsigned int		__bi_nr_segments;
+		};
+		bio_end_io_t		*bi_end_io;
+		void			*bi_private;
 #ifdef CONFIG_BLK_CGROUP
-	/*
-	 * Represents the association of the css and request_queue for the bio.
-	 * If a bio goes direct to device, it will not have a blkg as it will
-	 * not have a request_queue associated with it.  The reference is put
-	 * on release of the bio.
-	 */
-	struct blkcg_gq		*bi_blkg;
-	struct bio_issue	bi_issue;
+		/*
+		 * Represents the association of the css and request_queue for the bio.
+		 * If a bio goes direct to device, it will not have a blkg as it will
+		 * not have a request_queue associated with it.  The reference is put
+		 * on release of the bio.
+		 */
+		struct blkcg_gq		*bi_blkg;
+		struct bio_issue	bi_issue;
 #ifdef CONFIG_BLK_CGROUP_IOCOST
-	u64			bi_iocost_cost;
+		u64			bi_iocost_cost;
 #endif
 #endif
 
 #ifdef CONFIG_BLK_INLINE_ENCRYPTION
-	struct bio_crypt_ctx	*bi_crypt_context;
+		struct bio_crypt_ctx	*bi_crypt_context;
 #endif
 
 #if defined(CONFIG_BLK_DEV_INTEGRITY)
-	struct bio_integrity_payload *bi_integrity; /* data integrity */
+		struct bio_integrity_payload *bi_integrity; /* data integrity */
 #endif
 
-	unsigned short		bi_vcnt;	/* how many bio_vec's */
+		unsigned short		bi_vcnt;	/* how many bio_vec's */
 
-	/*
-	 * Everything starting with bi_max_vecs will be preserved by bio_reset()
-	 */
+		/*
+		 * Everything starting with bi_max_vecs will be preserved by bio_reset()
+		 */
 
-	unsigned short		bi_max_vecs;	/* max bvl_vecs we can hold */
+		unsigned short		bi_max_vecs;	/* max bvl_vecs we can hold */
 
-	atomic_t		__bi_cnt;	/* pin count */
+		atomic_t		__bi_cnt;	/* pin count */
 
-	struct bio_vec		*bi_io_vec;	/* the actual vec list */
+		struct bio_vec		*bi_io_vec;	/* the actual vec list */
 
-	struct bio_set		*bi_pool;
+		struct bio_set		*bi_pool;
+	);
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
@@ -276,6 +279,8 @@ struct bio {
 	 */
 	struct bio_vec		bi_inline_vecs[];
 };
+static_assert(offsetof(struct bio, bi_inline_vecs) == sizeof(struct bio_hdr),
+	      "struct member likely outside of struct_group_tagged()");
 
 #define BIO_RESET_BYTES		offsetof(struct bio, bi_max_vecs)
 #define BIO_MAX_SECTORS		(UINT_MAX >> SECTOR_SHIFT)
