@@ -1,0 +1,65 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2025 Yu Kuai
+#
+# Test iops limit over io merge
+
+. tests/throtl/rc
+
+DESCRIPTION="basic functionality"
+QUICK=1
+
+requires() {
+	_have_program taskset
+	_have_program fio
+}
+
+# every 16 0.5k IO will merge into one 8k IO, ideally runtime is 1s,
+# however it's about 1.3s in practice
+__fio() {
+	taskset -c 0 \
+	fio -filename=/dev/$THROTL_DEV \
+	-name=test \
+	-size=1600k \
+	-rw=write \
+	-bs=512 \
+	-iodepth=32 \
+	-iodepth_low=16 \
+	-iodepth_batch=16 \
+	-numjobs=1 \
+	-direct=1 \
+	-ioengine=io_uring &> /dev/null
+}
+
+test_io() {
+	start_time=$(date +%s.%N)
+
+	{
+		echo "$BASHPID" > "$CGROUP2_DIR/$THROTL_DIR/cgroup.procs"
+		__fio
+	} &
+
+	wait $!
+	end_time=$(date +%s.%N)
+	elapsed=$(echo "$end_time - $start_time" | bc)
+	printf "%.0f\n" "$elapsed"
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	# iolatency is 10ms, iops is at most 200/s
+	if ! _set_up_throtl irqmode=2 completion_nsec=10000000 hw_queue_depth=2; then
+		return 1;
+	fi
+
+	test_io
+
+	# 300 means 50% error range, no IO should be throttled
+	_throtl_set_limits wiops=300
+	test_io
+	_throtl_remove_limits
+
+	_clean_up_throtl
+	echo "Test complete"
+}
