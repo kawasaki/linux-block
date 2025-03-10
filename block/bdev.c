@@ -96,7 +96,14 @@ void invalidate_bdev(struct block_device *bdev)
 {
 	struct address_space *mapping = bdev->bd_mapping;
 
-	if (mapping->nrpages) {
+	XA_STATE(xas, &mapping->i_pages, 0);  /* we don't care about the index */
+	unsigned long nrpages;
+
+	xas_lock_irq(&xas);
+	nrpages = mapping->nrpages;
+	xas_unlock_irq(&xas);
+
+	if (nrpages) {
 		invalidate_bh_lrus();
 		lru_add_drain_all();	/* make sure all lru add caches are flushed */
 		invalidate_mapping_pages(mapping, 0, -1);
