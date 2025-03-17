@@ -17,6 +17,11 @@
 #![cfg_attr(not(CONFIG_RUSTC_HAS_COERCE_POINTEE), feature(coerce_unsized))]
 #![cfg_attr(not(CONFIG_RUSTC_HAS_COERCE_POINTEE), feature(dispatch_from_dyn))]
 #![cfg_attr(not(CONFIG_RUSTC_HAS_COERCE_POINTEE), feature(unsize))]
+#![cfg_attr(
+    CONFIG_RUSTC_HAS_STABLE_STRICT_PROVENANCE,
+    feature(strict_provenance_lints),
+    deny(fuzzy_provenance_casts, lossy_provenance_casts)
+)]
 #![feature(inline_const)]
 #![feature(lint_reasons)]
 // Stable in Rust 1.83
@@ -24,6 +29,109 @@
 #![feature(const_mut_refs)]
 #![feature(const_ptr_write)]
 #![feature(const_refs_to_cell)]
+
+#[cfg(CONFIG_RUSTC_HAS_STABLE_STRICT_PROVENANCE)]
+#[allow(clippy::incompatible_msrv)]
+mod strict_provenance {
+    /// Gets the "address" portion of the pointer.
+    ///
+    /// See https://doc.rust-lang.org/stable/core/primitive.pointer.html#method.addr.
+    #[inline]
+    pub fn addr<T>(ptr: *const T) -> usize {
+        ptr.addr()
+    }
+
+    /// Exposes the "provenance" part of the pointer for future use in
+    /// [`with_exposed_provenance`] and returns the "address" portion.
+    ///
+    /// See https://doc.rust-lang.org/stable/core/primitive.pointer.html#method.expose_provenance.
+    #[inline]
+    pub fn expose_provenance<T>(ptr: *const T) -> usize {
+        ptr.expose_provenance()
+    }
+
+    /// Converts an address back to a pointer, picking up some previously 'exposed'
+    /// provenance.
+    ///
+    /// See https://doc.rust-lang.org/stable/core/ptr/fn.with_exposed_provenance.html.
+    #[inline]
+    pub fn with_exposed_provenance<T>(addr: usize) -> *const T {
+        core::ptr::with_exposed_provenance(addr)
+    }
+
+    /// Converts an address back to a mutable pointer, picking up some previously 'exposed'
+    /// provenance.
+    ///
+    /// See https://doc.rust-lang.org/stable/core/ptr/fn.with_exposed_provenance_mut.html
+    #[inline]
+    pub fn with_exposed_provenance_mut<T>(addr: usize) -> *mut T {
+        core::ptr::with_exposed_provenance_mut(addr)
+    }
+
+    /// Creates a pointer with the given address and no [provenance][crate::ptr#provenance].
+    ///
+    /// See https://doc.rust-lang.org/stable/core/ptr/fn.without_provenance_mut.html.
+    #[inline]
+    pub fn without_provenance_mut<T>(addr: usize) -> *mut T {
+        core::ptr::without_provenance_mut(addr)
+    }
+}
+
+#[cfg(not(CONFIG_RUSTC_HAS_STABLE_STRICT_PROVENANCE))]
+mod strict_provenance {
+    /// Gets the "address" portion of the pointer.
+    ///
+    /// See https://doc.rust-lang.org/stable/core/primitive.pointer.html#method.addr.
+    #[inline]
+    pub fn addr<T>(ptr: *const T) -> usize {
+        // This is core's implementation from
+        // https://github.com/rust-lang/rust/commit/4291332175d12e79e6061cdc3f5dccac2e28b969 through
+        // https://github.com/rust-lang/rust/blob/1.84.0/library/core/src/ptr/const_ptr.rs#L172
+        // which is the first version that satisfies `CONFIG_RUSTC_HAS_STABLE_STRICT_PROVENANCE`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            #[allow(clippy::transmutes_expressible_as_ptr_casts)]
+            core::mem::transmute(ptr.cast::<()>())
+        }
+    }
+
+    /// Exposes the "provenance" part of the pointer for future use in
+    /// [`with_exposed_provenance`] and returns the "address" portion.
+    ///
+    /// See https://doc.rust-lang.org/stable/core/primitive.pointer.html#method.expose_provenance.
+    #[inline]
+    pub fn expose_provenance<T>(ptr: *const T) -> usize {
+        ptr.cast::<()>() as usize
+    }
+
+    /// Converts an address back to a pointer, picking up some previously 'exposed'
+    /// provenance.
+    ///
+    /// See https://doc.rust-lang.org/stable/core/ptr/fn.with_exposed_provenance.html.
+    #[inline]
+    pub fn with_exposed_provenance<T>(addr: usize) -> *const T {
+        addr as *const T
+    }
+
+    /// Converts an address back to a mutable pointer, picking up some previously 'exposed'
+    /// provenance.
+    ///
+    /// See https://doc.rust-lang.org/stable/core/ptr/fn.with_exposed_provenance_mut.html
+    #[inline]
+    pub fn with_exposed_provenance_mut<T>(addr: usize) -> *mut T {
+        addr as *mut T
+    }
+
+    /// Creates a pointer with the given address and no [provenance][crate::ptr#provenance].
+    ///
+    /// See https://doc.rust-lang.org/stable/core/ptr/fn.without_provenance_mut.html.
+    #[inline]
+    pub fn without_provenance_mut<T>(addr: usize) -> *mut T {
+        addr as *mut T
+    }
+}
+
+pub use strict_provenance::*;
 
 // Ensure conditional compilation based on the kernel configuration works;
 // otherwise we may silently break things like initcall handling.
