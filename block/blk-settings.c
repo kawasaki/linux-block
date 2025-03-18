@@ -433,6 +433,7 @@ int queue_limits_commit_update(struct request_queue *q,
 		struct queue_limits *lim)
 {
 	int error;
+	size_t i;
 
 	error = blk_validate_limits(lim);
 	if (error)
@@ -446,7 +447,14 @@ int queue_limits_commit_update(struct request_queue *q,
 	}
 #endif
 
-	q->limits = *lim;
+	/*
+	 * Note that direct assignment like "q->limits = *lim" is not atomic
+	 * (the compiler can generate things like "rep movsb" for it),
+	 * so we use WRITE_ONCE.
+	 */
+	for (i = 0; i < sizeof(struct queue_limits) / sizeof(long); i++)
+		WRITE_ONCE(*((long *)&q->limits + i), *((long *)lim + i));
+
 	if (q->disk)
 		blk_apply_bdi_limits(q->disk->bdi, lim);
 out_unlock:
