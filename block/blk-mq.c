@@ -1123,7 +1123,7 @@ static inline void __blk_mq_end_request_acct(struct request *rq, u64 now)
 	blk_account_io_done(rq, now);
 }
 
-inline void __blk_mq_end_request(struct request *rq, blk_status_t error)
+void __blk_mq_end_request(struct request *rq, blk_status_t error)
 {
 	if (blk_mq_need_time_stamp(rq))
 		__blk_mq_end_request_acct(rq, blk_time_get_ns());
