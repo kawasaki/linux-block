@@ -12,6 +12,7 @@
 
 struct page;
 struct folio_queue;
+struct scatterlist;
 
 typedef unsigned int __bitwise iov_iter_extraction_t;
 
@@ -30,6 +31,7 @@ enum iter_type {
 	ITER_XARRAY,
 	ITER_DISCARD,
 	ITER_ITERLIST,
+	ITER_SCATTERLIST,
 };
 
 #define ITER_SOURCE	1	// == WRITE
@@ -46,6 +48,7 @@ struct iov_iter {
 	bool nofault;
 	bool data_source;
 	size_t iov_offset;
+	size_t orig_count;
 	/*
 	 * Hack alert: overlay ubuf_iovec with iovec + count, so
 	 * that the members resolve correctly regardless of the type
@@ -73,11 +76,13 @@ struct iov_iter {
 				struct xarray *xarray;
 				void __user *ubuf;
 				struct iov_iterlist *iterlist;
+				struct scatterlist *sglist;
 			};
 			size_t count;
 		};
 	};
 	union {
+		struct scatterlist *sglist_head;
 		unsigned long nr_segs;
 		u8 folioq_slot;
 		loff_t xarray_start;
@@ -159,6 +164,11 @@ static inline bool iov_iter_is_xarray(const struct iov_iter *i)
 static inline bool iov_iter_is_iterlist(const struct iov_iter *i)
 {
 	return iov_iter_type(i) == ITER_ITERLIST;
+}
+
+static inline bool iov_iter_is_scatterlist(const struct iov_iter *i)
+{
+	return iov_iter_type(i) == ITER_SCATTERLIST;
 }
 
 static inline unsigned char iov_iter_rw(const struct iov_iter *i)
@@ -317,6 +327,8 @@ void iov_iter_xarray(struct iov_iter *i, unsigned int direction, struct xarray *
 void iov_iter_iterlist(struct iov_iter *i, unsigned int direction,
 		       struct iov_iterlist *iterlist, unsigned long nr_segs,
 		       size_t count);
+void iov_iter_scatterlist(struct iov_iter *i, unsigned int direction,
+			  struct scatterlist *sglist, size_t count);
 ssize_t iov_iter_get_pages2(struct iov_iter *i, struct page **pages,
 			size_t maxsize, unsigned maxpages, size_t *start);
 ssize_t iov_iter_get_pages_alloc2(struct iov_iter *i, struct page ***pages,

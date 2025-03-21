@@ -562,6 +562,26 @@ static void iov_iter_folioq_advance(struct iov_iter *i, size_t size)
 	i->folioq = folioq;
 }
 
+static void iov_iter_scatterlist_advance(struct iov_iter *i, size_t size)
+{
+	struct scatterlist *sg;
+
+	if (!i->count)
+		return;
+	i->count -= size;
+
+	size += i->iov_offset;
+
+	for (sg = i->sglist; sg; sg_next(sg)) {
+		if (likely(size < sg->length))
+			break;
+		size -= sg->length;
+	}
+	WARN_ON(!sg && size > 0);
+	i->iov_offset = size;
+	i->sglist = sg;
+}
+
 void iov_iter_advance(struct iov_iter *i, size_t size)
 {
 	if (unlikely(i->count < size))
@@ -591,6 +611,8 @@ void iov_iter_advance(struct iov_iter *i, size_t size)
 			i->iterlist++;
 			i->nr_segs--;
 		}
+	} else if (iov_iter_is_scatterlist(i)) {
+		iov_iter_scatterlist_advance(i, size);
 	}
 }
 EXPORT_SYMBOL(iov_iter_advance);
@@ -638,6 +660,15 @@ static void iov_iter_revert_iterlist(struct iov_iter *i, size_t unroll)
 	}
 }
 
+static void iov_iter_revert_scatterlist(struct iov_iter *i)
+{
+	size_t skip = i->orig_count - i->count;
+
+	i->sglist = i->sglist_head;
+	i->count = i->orig_count;
+	iov_iter_advance(i, skip);
+}
+
 void iov_iter_revert(struct iov_iter *i, size_t unroll)
 {
 	if (!unroll)
@@ -649,6 +680,8 @@ void iov_iter_revert(struct iov_iter *i, size_t unroll)
 		return;
 	if (unlikely(iov_iter_is_iterlist(i)))
 		return iov_iter_revert_iterlist(i, unroll);
+	if (unlikely(iov_iter_is_scatterlist(i)))
+		return iov_iter_revert_scatterlist(i);
 	if (unroll <= i->iov_offset) {
 		i->iov_offset -= unroll;
 		return;
@@ -706,6 +739,8 @@ size_t iov_iter_single_seg_count(const struct iov_iter *i)
 	if (unlikely(iov_iter_is_folioq(i)))
 		return !i->count ? 0 :
 			umin(folioq_folio_size(i->folioq, i->folioq_slot), i->count);
+	if (unlikely(iov_iter_is_scatterlist(i)))
+		return !i->sglist ? 0 : umin(i->count, i->sglist->length - i->iov_offset);
 	return i->count;
 }
 EXPORT_SYMBOL(iov_iter_single_seg_count);
@@ -856,6 +891,33 @@ void iov_iter_iterlist(struct iov_iter *iter, unsigned int direction,
 }
 EXPORT_SYMBOL(iov_iter_iterlist);
 
+/**
+ * iov_iter_scatterlist - Initialise an I/O iterator for a scatterlist chain
+ * @iter: The iterator to initialise.
+ * @direction: The direction of the transfer.
+ * @sglist: The head of the scatterlist
+ * @count: The size of the I/O buffer in bytes.
+ *
+ * Set up an I/O iterator that walks over a scatterlist.  Because scatterlists
+ * can be chained and have no back pointers, reversion requires starting again
+ * at the beginning and counting forwards.
+ */
+void iov_iter_scatterlist(struct iov_iter *iter, unsigned int direction,
+			  struct scatterlist *sglist, size_t count)
+{
+	WARN_ON(direction & ~(READ | WRITE));
+	*iter = (struct iov_iter){
+		.iter_type	= ITER_SCATTERLIST,
+		.data_source	= direction,
+		.sglist		= sglist,
+		.sglist_head	= sglist,
+		.iov_offset	= 0,
+		.count		= count,
+		.orig_count	= count,
+	};
+}
+EXPORT_SYMBOL(iov_iter_scatterlist);
+
 static bool iov_iter_aligned_iovec(const struct iov_iter *i, unsigned addr_mask,
 				   unsigned len_mask)
 {
@@ -994,6 +1056,26 @@ static unsigned long iov_iter_alignment_bvec(const struct iov_iter *i)
 	return res;
 }
 
+static unsigned long iov_iter_alignment_scatterlist(const struct iov_iter *i)
+{
+	struct scatterlist *sg;
+	unsigned skip = i->iov_offset;
+	unsigned res = 0;
+	size_t size = i->count;
+
+	for (sg = i->sglist; sg; sg = sg_next(sg)) {
+		size_t len = sg->length - skip;
+		res |= (unsigned long)sg->offset + skip;
+		if (len > size)
+			len = size;
+		res |= len;
+		size -= len;
+		skip = 0;
+	} while (size);
+
+	return res;
+}
+
 unsigned long iov_iter_alignment(const struct iov_iter *i)
 {
 	if (likely(iter_is_ubuf(i))) {
@@ -1024,6 +1106,8 @@ unsigned long iov_iter_alignment(const struct iov_iter *i)
 			align |= iov_iter_alignment(&i->iterlist[j].iter);
 		return align;
 	}
+	if (iov_iter_is_scatterlist(i))
+		return iov_iter_alignment_scatterlist(i);
 
 	return 0;
 }
@@ -1058,13 +1142,8 @@ unsigned long iov_iter_gap_alignment(const struct iov_iter *i)
 }
 EXPORT_SYMBOL(iov_iter_gap_alignment);
 
-static int want_pages_array(struct page ***res, size_t size,
-			    size_t start, unsigned int maxpages)
+static int __want_pages_array(struct page ***res, unsigned int count)
 {
-	unsigned int count = DIV_ROUND_UP(size + start, PAGE_SIZE);
-
-	if (count > maxpages)
-		count = maxpages;
 	WARN_ON(!count);	// caller should've prevented that
 	if (!*res) {
 		*res = kvmalloc_array(count, sizeof(struct page *), GFP_KERNEL);
@@ -1072,6 +1151,16 @@ static int want_pages_array(struct page ***res, size_t size,
 			return 0;
 	}
 	return count;
+}
+
+static int want_pages_array(struct page ***res, size_t size,
+			    size_t start, unsigned int maxpages)
+{
+	size_t count = DIV_ROUND_UP(size + start, PAGE_SIZE);
+
+	if (count > maxpages)
+		count = maxpages;
+	return __want_pages_array(res, count);
 }
 
 static ssize_t iter_folioq_get_pages(struct iov_iter *iter,
@@ -1183,6 +1272,52 @@ static ssize_t iter_xarray_get_pages(struct iov_iter *i,
 	maxsize = min_t(size_t, nr * PAGE_SIZE - offset, maxsize);
 	i->iov_offset += maxsize;
 	i->count -= maxsize;
+	return maxsize;
+}
+
+static struct page *first_scatterlist_segment(const struct iov_iter *i,
+					      size_t *size, size_t *start)
+{
+	struct scatterlist *sg = i->sglist;
+	struct page *page;
+	size_t skip = i->iov_offset, len;
+
+	if (!sg)
+		return NULL;
+
+	len = sg->length - skip;
+	if (*size > len)
+		*size = len;
+	skip += sg->offset;
+	page = sg_page(sg) + skip / PAGE_SIZE;
+	*start = skip % PAGE_SIZE;
+	return page;
+}
+
+static ssize_t iter_scatterlist_get_pages(struct iov_iter *i,
+					  struct page ***pages, size_t maxsize,
+					  unsigned maxpages, size_t *start)
+{
+	struct page **p, *page;
+	unsigned int n;
+
+	page = first_scatterlist_segment(i, &maxsize, start);
+	if (!page)
+		return -EFAULT;
+	n = want_pages_array(pages, maxsize, *start, maxpages);
+	if (!n)
+		return -ENOMEM;
+	p = *pages;
+	for (int k = 0; k < n; k++)
+		get_page(p[k] = page + k);
+	maxsize = min_t(size_t, maxsize, n * PAGE_SIZE - *start);
+	i->count -= maxsize;
+	i->iov_offset += maxsize;
+	if (i->iov_offset == i->bvec->bv_len) {
+		i->iov_offset = 0;
+		i->bvec++;
+		i->nr_segs--;
+	}
 	return maxsize;
 }
 
@@ -1300,6 +1435,8 @@ static ssize_t __iov_iter_get_pages_alloc(struct iov_iter *i,
 		i->count -= size;
 		return size;
 	}
+	if (iov_iter_is_scatterlist(i))
+		return iter_scatterlist_get_pages(i, pages, maxsize, maxpages, start);
 	return -EFAULT;
 }
 
@@ -1383,6 +1520,25 @@ static int iterlist_npages(const struct iov_iter *i, int maxpages)
 	return npages;
 }
 
+static int scatterlist_npages(const struct iov_iter *i, int maxpages)
+{
+	struct scatterlist *sg;
+	size_t skip = i->iov_offset, size = i->count;
+	int npages = 0;
+
+	for (sg = i->sglist; sg && size; sg = sg_next(sg)) {
+		unsigned offs = (sg->offset + skip) % PAGE_SIZE;
+		size_t len = umin(sg->length - skip, size);
+
+		size -= len;
+		npages += DIV_ROUND_UP(offs + len, PAGE_SIZE);
+		if (unlikely(npages > maxpages))
+			return maxpages;
+		skip = 0;
+	}
+	return npages;
+}
+
 int iov_iter_npages(const struct iov_iter *i, int maxpages)
 {
 	if (unlikely(!i->count))
@@ -1409,6 +1565,8 @@ int iov_iter_npages(const struct iov_iter *i, int maxpages)
 	}
 	if (iov_iter_is_iterlist(i))
 		return iterlist_npages(i, maxpages);
+	if (iov_iter_is_scatterlist(i))
+		return scatterlist_npages(i, maxpages);
 	return 0;
 }
 EXPORT_SYMBOL(iov_iter_npages);
@@ -1797,6 +1955,107 @@ static ssize_t iov_iter_extract_xarray_pages(struct iov_iter *i,
 }
 
 /*
+ * Count the number of virtually contiguous pages in a scatterlist iterator
+ * from the current point.
+ */
+static size_t count_scatterlist_contig_pages(const struct iov_iter *i,
+					     size_t maxpages, size_t maxsize)
+{
+	struct scatterlist *sg;
+	size_t npages = 0;
+	size_t skip = i->iov_offset, size = umin(i->count, maxsize);
+
+	for (sg = i->sglist; sg && size; sg = sg_next(sg)) {
+		size_t offs = (sg->offset + skip) % PAGE_SIZE;
+		size_t part = umin(sg->length - skip, size);
+
+		if (!part)
+			break;
+		size -= part;
+		npages += DIV_ROUND_UP(offs + part, PAGE_SIZE);
+		if (unlikely(npages > maxpages))
+			return maxpages;
+		if (((offs + part) % PAGE_SIZE) != 0)
+			break;
+		skip = 0;
+	}
+	return npages;
+}
+
+/*
+ * Extract a list of contiguous pages from an ITER_FOLIOQ iterator.  This does
+ * not get references on the pages, nor does it get a pin on them.
+ */
+static ssize_t iov_iter_extract_scatterlist_pages(struct iov_iter *i,
+						  struct page ***pages, size_t maxsize,
+						  unsigned int maxpages,
+						  iov_iter_extraction_t extraction_flags,
+						  size_t *offset0)
+{
+	struct scatterlist *sg = i->sglist;
+	struct page **p;
+	size_t npages, skip, size = 0;
+	int nr = 0;
+
+	if (!sg)
+		return 0;
+
+	while (skip = i->iov_offset,
+	       skip == sg->length) {
+		sg = sg_next(sg);
+		i->sglist = sg;
+		i->iov_offset = 0;
+		if (!sg)
+			return 0;
+	}
+
+	npages = count_scatterlist_contig_pages(i, maxpages, maxsize);
+
+	maxpages = __want_pages_array(pages, npages);
+	if (!maxpages)
+		return -ENOMEM;
+	*offset0 = (sg->offset + skip) & ~PAGE_MASK;
+	p = *pages;
+
+	for (sg = i->sglist; sg; sg = sg_next(sg)) {
+		struct page *page = sg_page(sg);
+		size_t part = umin(sg->length - skip, maxsize);
+		size_t off = sg->offset + skip;
+
+		if (!part)
+			break;
+
+		page += off / PAGE_SIZE;
+		off %= PAGE_SIZE;
+
+		do {
+			size_t chunk = umin(part, PAGE_SIZE - off);
+
+			p[nr++] = page;
+			page++;
+			maxpages--;
+			maxsize -= chunk;
+			size += chunk;
+			skip += chunk;
+			part -= chunk;
+			off = 0;
+		} while (part && maxsize && maxpages);
+
+		if (((sg->offset + skip + part) % PAGE_SIZE) != 0)
+			break;
+		if (!maxsize || !maxpages) {
+			if (!part)
+				sg = sg_next(sg);
+			break;
+		}
+		skip = 0;
+	}
+
+	iov_iter_advance(i, size);
+	return size;
+}
+
+/*
  * Extract a list of virtually contiguous pages from an ITER_BVEC iterator.
  * This does not get references on the pages, nor does it get a pin on them.
  */
@@ -2055,6 +2314,10 @@ ssize_t iov_iter_extract_pages(struct iov_iter *i,
 		i->count -= size;
 		return size;
 	}
+	if (iov_iter_is_scatterlist(i))
+		return iov_iter_extract_scatterlist_pages(i, pages, maxsize,
+							  maxpages, extraction_flags,
+							  offset0);
 	return -EFAULT;
 }
 EXPORT_SYMBOL_GPL(iov_iter_extract_pages);
@@ -2153,6 +2416,44 @@ static size_t iterate_iterlist(struct iov_iter *iter, size_t len, void *priv, vo
 }
 
 /*
+ * Handle iteration over ITER_SCATTERLIST.
+ */
+static size_t iterate_scatterlist(struct iov_iter *iter, size_t len, void *priv, void *priv2,
+				  iov_step_f step)
+{
+	struct scatterlist *sg = iter->sglist;
+	size_t progress = 0, skip = iter->iov_offset;
+
+	do {
+		struct page *page = sg_page(sg);
+		size_t remain, consumed;
+		size_t offset = sg->offset + skip, part;
+		void *kaddr = kmap_local_page(page + offset / PAGE_SIZE);
+
+		part = min3(len,
+			   (size_t)(sg->length - skip),
+			   (size_t)(PAGE_SIZE - offset % PAGE_SIZE));
+		remain = step(kaddr + offset % PAGE_SIZE, progress, part, priv, priv2);
+		kunmap_local(kaddr);
+		consumed = part - remain;
+		len -= consumed;
+		progress += consumed;
+		skip += consumed;
+		if (skip >= sg->length) {
+			skip = 0;
+			sg = sg_next(sg);
+		}
+		if (remain)
+			break;
+	} while (len);
+
+	iter->sglist = sg;
+	iter->iov_offset = skip;
+	iter->count -= progress;
+	return progress;
+}
+
+/*
  * Out of line iteration for iterator types that don't need such fast handling.
  */
 size_t __iterate_and_advance2(struct iov_iter *iter, size_t len, void *priv,
@@ -2164,6 +2465,8 @@ size_t __iterate_and_advance2(struct iov_iter *iter, size_t len, void *priv,
 		return iterate_xarray(iter, len, priv, priv2, step);
 	if (iov_iter_is_iterlist(iter))
 		return iterate_iterlist(iter, len, priv, priv2, ustep, step);
+	if (iov_iter_is_scatterlist(iter))
+		return iterate_scatterlist(iter, len, priv, priv2, step);
 	WARN_ON(1);
 	return 0;
 }
