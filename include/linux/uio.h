@@ -13,6 +13,7 @@
 struct page;
 struct folio_queue;
 struct scatterlist;
+struct sk_buff;
 
 typedef unsigned int __bitwise iov_iter_extraction_t;
 
@@ -32,6 +33,7 @@ enum iter_type {
 	ITER_DISCARD,
 	ITER_ITERLIST,
 	ITER_SCATTERLIST,
+	ITER_SKBUFF,
 };
 
 #define ITER_SOURCE	1	// == WRITE
@@ -77,6 +79,7 @@ struct iov_iter {
 				void __user *ubuf;
 				struct iov_iterlist *iterlist;
 				struct scatterlist *sglist;
+				const struct sk_buff *skb;
 			};
 			size_t count;
 		};
@@ -169,6 +172,11 @@ static inline bool iov_iter_is_iterlist(const struct iov_iter *i)
 static inline bool iov_iter_is_scatterlist(const struct iov_iter *i)
 {
 	return iov_iter_type(i) == ITER_SCATTERLIST;
+}
+
+static inline bool iov_iter_is_skbuff(const struct iov_iter *i)
+{
+	return iov_iter_type(i) == ITER_SKBUFF;
 }
 
 static inline unsigned char iov_iter_rw(const struct iov_iter *i)
@@ -329,6 +337,8 @@ void iov_iter_iterlist(struct iov_iter *i, unsigned int direction,
 		       size_t count);
 void iov_iter_scatterlist(struct iov_iter *i, unsigned int direction,
 			  struct scatterlist *sglist, size_t count);
+void iov_iter_skbuff(struct iov_iter *i, unsigned int direction,
+		     const struct sk_buff *skb, size_t count);
 ssize_t iov_iter_get_pages2(struct iov_iter *i, struct page **pages,
 			size_t maxsize, unsigned maxpages, size_t *start);
 ssize_t iov_iter_get_pages_alloc2(struct iov_iter *i, struct page ***pages,

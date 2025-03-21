@@ -12,6 +12,7 @@
 #include <linux/scatterlist.h>
 #include <linux/instrumented.h>
 #include <linux/iov_iter.h>
+#include <linux/skbuff.h>
 
 static __always_inline
 size_t copy_to_user_iter(void __user *iter_to, size_t progress,
@@ -917,6 +918,29 @@ void iov_iter_scatterlist(struct iov_iter *iter, unsigned int direction,
 	};
 }
 EXPORT_SYMBOL(iov_iter_scatterlist);
+
+/**
+ * iov_iter_skbuff - Initialise an I/O iterator for a socket buffer
+ * @iter: The iterator to initialise.
+ * @direction: The direction of the transfer.
+ * @skb: The socket buffer
+ * @count: The size of the I/O buffer in bytes.
+ *
+ * Set up an I/O iterator that walks over a socket buffer.
+ */
+void iov_iter_skbuff(struct iov_iter *i, unsigned int direction,
+		     const struct sk_buff *skb, size_t count)
+{
+	WARN_ON(direction & ~(READ | WRITE));
+	*iter = (struct iov_iter){
+		.iter_type	= ITER_SKBUFF,
+		.data_source	= direction,
+		.skb		= skb,
+		.iov_offset	= 0,
+		.count		= count,
+	};
+}
+EXPORT_SYMBOL(iov_iter_skbuff);
 
 static bool iov_iter_aligned_iovec(const struct iov_iter *i, unsigned addr_mask,
 				   unsigned len_mask)
@@ -2318,6 +2342,10 @@ ssize_t iov_iter_extract_pages(struct iov_iter *i,
 		return iov_iter_extract_scatterlist_pages(i, pages, maxsize,
 							  maxpages, extraction_flags,
 							  offset0);
+	if (iov_iter_is_skbuff(i))
+		return iov_iter_extract_skbuff_pages(i, pages, maxsize,
+						     maxpages, extraction_flags,
+						     offset0);
 	return -EFAULT;
 }
 EXPORT_SYMBOL_GPL(iov_iter_extract_pages);
@@ -2453,6 +2481,97 @@ static size_t iterate_scatterlist(struct iov_iter *iter, size_t len, void *priv,
 	return progress;
 }
 
+struct skbuff_iter_ctx {
+	iov_step_f	step;
+	size_t		progress;
+	void		*priv;
+	void		*priv2;
+};
+
+static bool iterate_skbuff_frag(const struct sk_buff *skb, struct skbuff_iter_ctx *ctx,
+				int offset, int len, int recursion_level)
+{
+	struct sk_buff *frag_iter;
+	size_t skip = offset, part, remain, consumed;
+
+	if (unlikely(recursion_level >= 24))
+		return false;
+
+	part = skb_headlen(skb);
+	if (skip < part) {
+		part = umin(part - skip, len);
+		remain = ctx->step(skb->data + skip, ctx->progress, part,
+				   ctx->priv, ctx->priv2);
+		consumed = part - remain;
+		ctx->progress += consumed;
+		len -= consumed;
+		if (remain > 0 || len <= 0)
+			return false;
+		skip = 0;
+	} else {
+		skip -= part;
+	}
+
+	for (int i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		const skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+		size_t fsize = skb_frag_size(frag);
+
+		if (skip >= fsize) {
+			skip -= fsize;
+			continue;
+		}
+
+		part = umin(fsize - skip, len);
+		remain = ctx->step(skb_frag_address(frag) + skip,
+				   ctx->progress, part, ctx->priv, ctx->priv2);
+		consumed = part - remain;
+		ctx->progress += consumed;
+		len -= consumed;
+		if (remain > 0 || len <= 0)
+			return false;
+		skip = 0;
+	}
+
+	skb_walk_frags(skb, frag_iter) {
+		size_t fsize = frag_iter->len;
+
+		if (skip >= fsize) {
+			skip -= fsize;
+			continue;
+		}
+
+		part = umin(fsize - skip, len);
+		if (!iterate_skbuff_frag(frag_iter, ctx, skb_headlen(skb) + skip,
+					 part, recursion_level + 1))
+			return false;
+		len -= part;
+		if (len <= 0)
+			return false;
+		skip = 0;
+	}
+	return true;
+}
+
+/*
+ * Handle iteration over ITER_SKBUFF.  Modelled on __skb_to_sgvec().
+ */
+static size_t iterate_skbuff(struct iov_iter *iter, size_t len, void *priv, void *priv2,
+			     iov_step_f step)
+{
+	struct skbuff_iter_ctx ctx = {
+		.step		= step,
+		.progress	= 0,
+		.priv		= priv,
+		.priv2		= priv2,
+	};
+
+	iterate_skbuff_frag(iter->skb, &ctx, iter->iov_offset, len, 0);
+
+	iter->iov_offset += ctx.progress;
+	iter->count -= ctx.progress;
+	return ctx.progress;
+}
+
 /*
  * Out of line iteration for iterator types that don't need such fast handling.
  */
@@ -2467,6 +2586,8 @@ size_t __iterate_and_advance2(struct iov_iter *iter, size_t len, void *priv,
 		return iterate_iterlist(iter, len, priv, priv2, ustep, step);
 	if (iov_iter_is_scatterlist(iter))
 		return iterate_scatterlist(iter, len, priv, priv2, step);
+	if (iov_iter_is_skbuff(iter))
+		return iterate_skbuff(iter, len, priv, priv2, step);
 	WARN_ON(1);
 	return 0;
 }
