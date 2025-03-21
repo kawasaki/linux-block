@@ -503,7 +503,10 @@ struct nvme_ns_head {
 	struct work_struct	partition_scan_work;
 	struct mutex		lock;
 	unsigned long		flags;
+	struct delayed_work	remove_work;
+	unsigned int		delayed_shutdown_sec;
 #define NVME_NSHEAD_DISK_LIVE	0
+#define NVME_NSHEAD_FABRICS	1
 	struct nvme_ns __rcu	*current_path[];
 #endif
 };
@@ -986,6 +989,7 @@ extern struct device_attribute dev_attr_ana_grpid;
 extern struct device_attribute dev_attr_ana_state;
 extern struct device_attribute dev_attr_queue_depth;
 extern struct device_attribute dev_attr_numa_nodes;
+extern struct device_attribute dev_attr_delayed_shutdown_sec;
 extern struct device_attribute subsys_attr_iopolicy;
 
 static inline bool nvme_disk_is_ns_head(struct gendisk *disk)
