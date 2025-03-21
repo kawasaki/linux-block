@@ -578,6 +578,19 @@ void iov_iter_advance(struct iov_iter *i, size_t size)
 		iov_iter_folioq_advance(i, size);
 	} else if (iov_iter_is_discard(i)) {
 		i->count -= size;
+	} else if (iov_iter_is_iterlist(i)) {
+		i->count -= size;
+		for (;;) {
+			size_t part = umin(size, i->iterlist->iter.count);
+
+			if (part > 0)
+				iov_iter_advance(&i->iterlist->iter, part);
+			size -= part;
+			if (!size)
+				break;
+			i->iterlist++;
+			i->nr_segs--;
+		}
 	}
 }
 EXPORT_SYMBOL(iov_iter_advance);
@@ -608,6 +621,23 @@ static void iov_iter_folioq_revert(struct iov_iter *i, size_t unroll)
 	i->folioq = folioq;
 }
 
+static void iov_iter_revert_iterlist(struct iov_iter *i, size_t unroll)
+{
+	for (;;) {
+		struct iov_iterlist *il = i->iterlist;
+
+		size_t part = umin(unroll, il->orig_count - il->iter.count);
+
+		if (part > 0)
+			iov_iter_revert(&il->iter, part);
+		unroll -= part;
+		if (!unroll)
+			break;
+		i->iterlist--;
+		i->nr_segs++;
+	}
+}
+
 void iov_iter_revert(struct iov_iter *i, size_t unroll)
 {
 	if (!unroll)
@@ -617,6 +647,8 @@ void iov_iter_revert(struct iov_iter *i, size_t unroll)
 	i->count += unroll;
 	if (unlikely(iov_iter_is_discard(i)))
 		return;
+	if (unlikely(iov_iter_is_iterlist(i)))
+		return iov_iter_revert_iterlist(i, unroll);
 	if (unroll <= i->iov_offset) {
 		i->iov_offset -= unroll;
 		return;
@@ -663,6 +695,8 @@ EXPORT_SYMBOL(iov_iter_revert);
  */
 size_t iov_iter_single_seg_count(const struct iov_iter *i)
 {
+	if (iov_iter_is_iterlist(i))
+		i = &i->iterlist->iter;
 	if (i->nr_segs > 1) {
 		if (likely(iter_is_iovec(i) || iov_iter_is_kvec(i)))
 			return min(i->count, iter_iov(i)->iov_len - i->iov_offset);
@@ -786,6 +820,41 @@ void iov_iter_discard(struct iov_iter *i, unsigned int direction, size_t count)
 	};
 }
 EXPORT_SYMBOL(iov_iter_discard);
+
+/**
+ * iov_iter_iterlist - Initialise an I/O iterator that is a list of iterators
+ * @iter: The iterator to initialise.
+ * @direction: The direction of the transfer.
+ * @iterlist: The list of iterators
+ * @nr_segs: The number of elements in the list
+ * @count: The size of the I/O buffer in bytes.
+ *
+ * Set up an I/O iterator that walks over an array of other iterators.  It's
+ * only available as a source iterator (for WRITE) and none of the iterators in
+ * the array can be of ITER_ITERLIST type to prevent infinite recursion.
+ */
+void iov_iter_iterlist(struct iov_iter *iter, unsigned int direction,
+		       struct iov_iterlist *iterlist, unsigned long nr_segs,
+		       size_t count)
+{
+	unsigned long i;
+
+	BUG_ON(direction != WRITE);
+	for (i = 0; i < nr_segs; i++) {
+		BUG_ON(iterlist[i].iter.iter_type == ITER_ITERLIST);
+		BUG_ON(iterlist[i].iter.data_source != direction);
+		iterlist[i].orig_count = iterlist[i].iter.count;
+	}
+
+	*iter = (struct iov_iter){
+		.iter_type	= ITER_ITERLIST,
+		.data_source	= true,
+		.count		= count,
+		.iterlist	= iterlist,
+		.nr_segs	= nr_segs,
+	};
+}
+EXPORT_SYMBOL(iov_iter_iterlist);
 
 static bool iov_iter_aligned_iovec(const struct iov_iter *i, unsigned addr_mask,
 				   unsigned len_mask)
@@ -946,6 +1015,15 @@ unsigned long iov_iter_alignment(const struct iov_iter *i)
 		return i->iov_offset | i->count;
 	if (iov_iter_is_xarray(i))
 		return (i->xarray_start + i->iov_offset) | i->count;
+
+	if (iov_iter_is_iterlist(i)) {
+		unsigned long align = 0;
+		unsigned int j;
+
+		for (j = 0; j < i->nr_segs; j++)
+			align |= iov_iter_alignment(&i->iterlist[j].iter);
+		return align;
+	}
 
 	return 0;
 }
@@ -1210,6 +1288,18 @@ static ssize_t __iov_iter_get_pages_alloc(struct iov_iter *i,
 		return iter_folioq_get_pages(i, pages, maxsize, maxpages, start);
 	if (iov_iter_is_xarray(i))
 		return iter_xarray_get_pages(i, pages, maxsize, maxpages, start);
+	if (iov_iter_is_iterlist(i)) {
+		ssize_t size;
+
+		while (!i->iterlist->iter.count) {
+			i->iterlist++;
+			i->nr_segs--;
+		}
+		size = __iov_iter_get_pages_alloc(&i->iterlist->iter,
+						  pages, maxsize, maxpages, start);
+		i->count -= size;
+		return size;
+	}
 	return -EFAULT;
 }
 
@@ -1278,6 +1368,21 @@ static int bvec_npages(const struct iov_iter *i, int maxpages)
 	return npages;
 }
 
+static int iterlist_npages(const struct iov_iter *i, int maxpages)
+{
+	const struct iov_iterlist *p;
+	ssize_t size = i->count;
+	int npages = 0;
+
+	for (p = i->iterlist; size; p++) {
+		size -= p->iter.count;
+		npages += iov_iter_npages(&p->iter, maxpages - npages);
+		if (unlikely(npages >= maxpages))
+			return maxpages;
+	}
+	return npages;
+}
+
 int iov_iter_npages(const struct iov_iter *i, int maxpages)
 {
 	if (unlikely(!i->count))
@@ -1302,6 +1407,8 @@ int iov_iter_npages(const struct iov_iter *i, int maxpages)
 		int npages = DIV_ROUND_UP(offset + i->count, PAGE_SIZE);
 		return min(npages, maxpages);
 	}
+	if (iov_iter_is_iterlist(i))
+		return iterlist_npages(i, maxpages);
 	return 0;
 }
 EXPORT_SYMBOL(iov_iter_npages);
@@ -1313,11 +1420,14 @@ const void *dup_iter(struct iov_iter *new, struct iov_iter *old, gfp_t flags)
 		return new->bvec = kmemdup(new->bvec,
 				    new->nr_segs * sizeof(struct bio_vec),
 				    flags);
-	else if (iov_iter_is_kvec(new) || iter_is_iovec(new))
+	if (iov_iter_is_kvec(new) || iter_is_iovec(new))
 		/* iovec and kvec have identical layout */
 		return new->__iov = kmemdup(new->__iov,
 				   new->nr_segs * sizeof(struct iovec),
 				   flags);
+	if (WARN_ON_ONCE(iov_iter_is_iterlist(old)))
+		/* Don't allow dup'ing of iterlist as the cleanup is complicated */
+		return NULL;
 	return NULL;
 }
 EXPORT_SYMBOL(dup_iter);
@@ -1928,6 +2038,23 @@ ssize_t iov_iter_extract_pages(struct iov_iter *i,
 		return iov_iter_extract_xarray_pages(i, pages, maxsize,
 						     maxpages, extraction_flags,
 						     offset0);
+	if (iov_iter_is_iterlist(i)) {
+		ssize_t size;
+
+		while (i->nr_segs && !i->iterlist->iter.count) {
+			i->iterlist++;
+			i->nr_segs--;
+		}
+		if (!i->nr_segs) {
+			WARN_ON_ONCE(i->count);
+			return 0;
+		}
+		size = iov_iter_extract_pages(&i->iterlist->iter,
+					      pages, maxsize, maxpages,
+					      extraction_flags, offset0);
+		i->count -= size;
+		return size;
+	}
 	return -EFAULT;
 }
 EXPORT_SYMBOL_GPL(iov_iter_extract_pages);
@@ -1999,6 +2126,33 @@ size_t iterate_discard(struct iov_iter *iter, size_t len, void *priv, void *priv
 }
 
 /*
+ * Handle iteration over ITER_ITERLIST.
+ */
+static size_t iterate_iterlist(struct iov_iter *iter, size_t len, void *priv, void *priv2,
+			       iov_ustep_f ustep, iov_step_f step)
+{
+	struct iov_iterlist *p = iter->iterlist;
+	size_t progress = 0;
+
+	do {
+		size_t consumed;
+
+		consumed = iterate_and_advance2(&p->iter, len, priv, priv2, ustep, step);
+
+		len -= consumed;
+		progress += consumed;
+		if (p->iter.count)
+			break;
+		p++;
+	} while (len);
+
+	iter->nr_segs -= p - iter->iterlist;
+	iter->iterlist = p;
+	iter->count -= progress;
+	return progress;
+}
+
+/*
  * Out of line iteration for iterator types that don't need such fast handling.
  */
 size_t __iterate_and_advance2(struct iov_iter *iter, size_t len, void *priv,
@@ -2008,6 +2162,8 @@ size_t __iterate_and_advance2(struct iov_iter *iter, size_t len, void *priv,
 		return iterate_discard(iter, len, priv, priv2, step);
 	if (iov_iter_is_xarray(iter))
 		return iterate_xarray(iter, len, priv, priv2, step);
+	if (iov_iter_is_iterlist(iter))
+		return iterate_iterlist(iter, len, priv, priv2, ustep, step);
 	WARN_ON(1);
 	return 0;
 }
