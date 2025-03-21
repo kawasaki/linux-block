@@ -997,7 +997,6 @@ static inline bool nvme_disk_is_ns_head(struct gendisk *disk)
 	return disk->fops == &nvme_ns_head_ops;
 }
 #else
-#define multipath false
 static inline bool nvme_ctrl_use_ana(struct nvme_ctrl *ctrl)
 {
 	return false;

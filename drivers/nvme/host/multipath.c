@@ -9,11 +9,6 @@
 #include <trace/events/block.h>
 #include "nvme.h"
 
-bool multipath = true;
-module_param(multipath, bool, 0444);
-MODULE_PARM_DESC(multipath,
-	"turn on native support for multiple controllers per subsystem");
-
 static const char *nvme_iopolicy_names[] = {
 	[NVME_IOPOLICY_NUMA]	= "numa",
 	[NVME_IOPOLICY_RR]	= "round-robin",
@@ -671,14 +666,6 @@ int nvme_mpath_alloc_disk(struct nvme_ctrl *ctrl, struct nvme_ns_head *head)
 	INIT_DELAYED_WORK(&head->remove_work, nvme_remove_head_work);
 	head->delayed_shutdown_sec = 0;
 
-	/*
-	 * A head disk node is always created for all types of NVMe disks
-	 * (single-ported and multi-ported), unless the multipath module
-	 * parameter is explicitly set to false.
-	 */
-	if (!multipath)
-		return 0;
-
 	blk_set_stacking_limits(&lim);
 	lim.dma_alignment = 3;
 	lim.features |= BLK_FEAT_IO_STAT | BLK_FEAT_NOWAIT | BLK_FEAT_POLL;
@@ -1262,8 +1249,8 @@ int nvme_mpath_init_identify(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 	size_t ana_log_size;
 	int error = 0;
 
-	/* check if multipath is enabled and we have the capability */
-	if (!multipath || !ctrl->subsys ||
+	/* check if controller has ANA capability */
+	if (!ctrl->subsys ||
 	    !(ctrl->subsys->cmic & NVME_CTRL_CMIC_ANA))
 		return 0;
 
