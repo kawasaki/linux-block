@@ -1071,6 +1071,10 @@ static inline void __ublk_complete_rq(struct request *req)
 		goto exit;
 	}
 
+	/* truncate result in case it is bigger than request bytes */
+	if (io->res > blk_rq_bytes(req))
+		io->res = blk_rq_bytes(req);
+
 	/*
 	 * FLUSH, DISCARD or WRITE_ZEROES usually won't return bytes returned, so end them
 	 * directly.
