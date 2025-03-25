@@ -1,0 +1,139 @@
+name: Run blktests
+
+on:
+  pull_request:
+
+env:
+  KERNEL_COMMIT_SHA: "${{ github.event.pull_request.head.sha }}"
+  KERNEL_TREE: "https://github.com/${{ github.repository }}"
+
+#This workflow requires two k8s actions-runner-controllers (ARC) to be active.
+#One for building the kernel and fedora image and the other one for spawning the VM resource.
+jobs:
+  build-kernel:
+    #This step runs in a container in the k8s cluster 
+    runs-on: arc-kernel-builder
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Build the Fedora containerimage with a freshly build kernel
+        run: |
+          cd .github/workflows/run_blktests
+          docker build --build-arg KERNEL_TREE=${KERNEL_TREE} --build-arg KERNEL_COMMIT_SHA=${KERNEL_COMMIT_SHA} -t fedora-cloudimage -f Dockerfile.fedora-cloudimage-builder . 2>&1 | tee build.log
+          #Setting KERNEL_VERSION var which is latern needed for notifying the VM what kernel to pick up
+          cat build.log | grep KERNEL_VERSION | awk '{print $3}' | grep KERNEL_VERSION >> $GITHUB_ENV
+
+      - name: Push the new Fedora containerimage with the freshly build kernel
+        run: |
+          docker tag fedora-cloudimage registry-service.docker-registry.svc.cluster.local/fedora-cloudimage:${KERNEL_VERSION}
+          docker push registry-service.docker-registry.svc.cluster.local/fedora-cloudimage:${KERNEL_VERSION}
+
+      - name: Notifying the next job to pick up the Fedora image with the correct tag that we just build
+        run: |
+          echo "${KERNEL_VERSION}"
+
+  run-tests-on-kernel:
+    #ATTENTION! This section formats all available NVMe devices. Be careful when changing the `runs-on` tag!
+    #This step runs in a VM with the previously compiled kernel in the k8s cluster 
+    runs-on: arc-vm-runner-set
+    needs: build-kernel
+    steps:
+      - name: Print VM debug info
+        run: |
+          uname -a
+          lsblk
+
+      - name: Install build dependencies for blktests
+        run: |
+          sudo dnf install -y gcc \
+          clang \
+          make \
+          util-linux \
+          llvm \
+          gawk \
+          fio \
+          udev \
+          kmod \
+          coreutils \
+          gcc \
+          gzip \
+          e2fsprogs \
+          xfsprogs \
+          f2fs-tools \
+          btrfs-progs \
+          device-mapper-multipath \
+          nbd \
+          device-mapper \
+          unzip \
+          jq \
+          nvme-cli \
+          git \
+          wget
+
+      - name: Checkout blktests
+        uses: actions/checkout@v4
+        with:
+          repository: osandov/blktests
+          path: blktests
+
+      - name: Build blktests
+        run: |
+          cd blktests
+          make
+
+      - name: Format all NVMe devices present
+        run: |
+          # ---- Loop over each NVMe ctrl to format them with one namespace
+          for ctrl in /dev/nvme[0-9]*; do
+            if [[ "$ctrl" =~ /dev/nvme[0-9]+$ ]]; then
+              sudo nvme delete-ns $ctrl -n 0xffffffff
+              sudo nvme format $ctrl -n 0xffffffff -l 0 -f
+
+              sudo nvme create-ns -s 1 -c 1 -f 1 -d 0 --csi=0 $ctrl
+              sudo nvme attach-ns $ctrl -n 1 -c 0
+              FORMAT=$(sudo nvme id-ns ${ctrl}n1 | grep lbaf | grep ms:0 | grep lbads:9 | grep rp:0 | awk '{print $2}')
+
+              sudo nvme delete-ns $ctrl -n 0xffffffff
+              SIZE=$(sudo nvme id-ctrl $ctrl --output-format=json | jq -r '{tnvmcap} | .[]' | awk '{print $1/512}')
+              if sudo nvme effects-log $ctrl -c 0x02 --output-format=json | jq -r '.[] | {io_cmd_set}' | grep -iq zone ; then
+                #ZNS
+                sudo nvme create-ns -s $SIZE -c $SIZE -f $FORMAT -d 0 --csi=2 $ctrl
+              else
+                #NVM
+                sudo nvme create-ns -s $SIZE -c $SIZE -f $FORMAT -d 0 --csi=0 $ctrl
+              fi
+              sudo nvme attach-ns $ctrl -n 1 -c 0
+            fi
+          done
+
+      - name: Create variables for the individual devices
+        run: |
+          ZBDCOUNTER=0
+          BDEVCOUNTER=0
+          for ns in /dev/nvme[0-9]*; do
+            if [[ "$ns" =~ /dev/nvme[0-9]+n[0-9]+$ ]]; then
+              if sudo nvme effects-log $ns -c 0x02 --output-format=json | jq -r '.[] | {io_cmd_set}' | grep -iq zone ; then
+                echo "ZBD${ZBDCOUNTER}=${ns}" >> $GITHUB_ENV
+                ZBDCOUNTER=$((ZBDCOUNTER+1))
+              else
+                echo "BDEV${BDEVCOUNTER}=${ns}" >> $GITHUB_ENV
+                BDEVCOUNTER=$((BDEVCOUNTER+1))
+              fi
+            fi
+          done
+
+      - name: Configure blktests
+        run: |
+          cd blktests
+          cat > config << EOF
+          TEST_DEVS=(${ZBD0})
+          DEVICE_ONLY=1
+          EOF
+
+      - name: Run ZBD Tests
+        run: |
+          cd blktests
+          sudo ./check zbd
+        env: 
+          RUN_ZONED_TESTS: 1
