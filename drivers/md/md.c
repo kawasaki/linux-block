@@ -418,7 +418,7 @@ static void md_submit_bio(struct bio *bio)
 		return;
 	}
 
-	bio = bio_split_to_limits(bio);
+	bio = bio_split_to_limits_and_submit(bio);
 	if (!bio)
 		return;
 

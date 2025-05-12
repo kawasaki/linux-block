@@ -1939,6 +1939,7 @@ static blk_status_t __send_zone_reset_all(struct clone_info *ci)
 static void dm_split_and_process_bio(struct mapped_device *md,
 				     struct dm_table *map, struct bio *bio)
 {
+	struct bio *remainder = NULL;
 	struct clone_info ci;
 	struct dm_io *io;
 	blk_status_t error = BLK_STS_OK;
@@ -1961,7 +1962,8 @@ static void dm_split_and_process_bio(struct mapped_device *md,
 		 * emulation to ensure that the BIO does not cross zone
 		 * boundaries.
 		 */
-		bio = bio_split_to_limits(bio);
+		remainder = bio;
+		bio = bio_split_to_limits(&remainder);
 		if (!bio)
 			return;
 	}
@@ -1971,7 +1973,7 @@ static void dm_split_and_process_bio(struct mapped_device *md,
 	 * need zone append emulation (e.g. dm-crypt).
 	 */
 	if (static_branch_unlikely(&zoned_enabled) && dm_zone_plug_bio(md, bio))
-		return;
+		goto submit_remainder;
 
 	/* Only support nowait for normal IO */
 	if (unlikely(bio->bi_opf & REQ_NOWAIT) && !is_abnormal) {
@@ -1982,13 +1984,13 @@ static void dm_split_and_process_bio(struct mapped_device *md,
 		 */
 		if (bio->bi_opf & REQ_PREFLUSH) {
 			bio_wouldblock_error(bio);
-			return;
+			goto submit_remainder;
 		}
 		io = alloc_io(md, bio, GFP_NOWAIT);
 		if (unlikely(!io)) {
 			/* Unable to do anything without dm_io. */
 			bio_wouldblock_error(bio);
-			return;
+			goto submit_remainder;
 		}
 	} else {
 		io = alloc_io(md, bio, GFP_NOIO);
@@ -2036,6 +2038,10 @@ out:
 		dm_io_dec_pending(io, error);
 	} else
 		dm_queue_poll_io(bio, io);
+
+submit_remainder:
+	if (remainder)
+		submit_bio_noacct(remainder);
 }
 
 static void dm_submit_bio(struct bio *bio)

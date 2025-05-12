@@ -3058,6 +3058,7 @@ void blk_mq_submit_bio(struct bio *bio)
 	struct blk_plug *plug = current->plug;
 	const int is_sync = op_is_sync(bio->bi_opf);
 	struct blk_mq_hw_ctx *hctx;
+	struct bio *remainder = NULL;
 	unsigned int nr_segs;
 	struct request *rq;
 	blk_status_t ret;
@@ -3107,18 +3108,19 @@ void blk_mq_submit_bio(struct bio *bio)
 		goto queue_exit;
 	}
 
-	bio = __bio_split_to_limits(bio, &q->limits, &nr_segs);
+	remainder = bio;
+	bio = __bio_split_to_limits(&remainder, &q->limits, &nr_segs);
 	if (!bio)
 		goto queue_exit;
 
 	if (!bio_integrity_prep(bio))
-		goto queue_exit;
+		goto submit_remainder_and_exit;
 
 	if (blk_mq_attempt_bio_merge(q, bio, nr_segs))
-		goto queue_exit;
+		goto submit_remainder_and_exit;
 
 	if (blk_queue_is_zoned(q) && blk_zone_plug_bio(bio, nr_segs))
-		goto queue_exit;
+		goto submit_remainder_and_exit;
 
 new_request:
 	if (rq) {
@@ -3128,7 +3130,7 @@ new_request:
 		if (unlikely(!rq)) {
 			if (bio->bi_opf & REQ_NOWAIT)
 				bio_wouldblock_error(bio);
-			goto queue_exit;
+			goto submit_remainder_and_exit;
 		}
 	}
 
@@ -3143,18 +3145,18 @@ new_request:
 		bio->bi_status = ret;
 		bio_endio(bio);
 		blk_mq_free_request(rq);
-		return;
+		goto submit_remainder;
 	}
 
 	if (bio_zone_write_plugging(bio))
 		blk_zone_write_plug_init_request(rq);
 
 	if (op_is_flush(bio->bi_opf) && blk_insert_flush(rq))
-		return;
+		goto submit_remainder;
 
 	if (plug) {
 		blk_add_rq_to_plug(plug, rq);
-		return;
+		goto submit_remainder;
 	}
 
 	hctx = rq->mq_hctx;
@@ -3165,7 +3167,16 @@ new_request:
 	} else {
 		blk_mq_run_dispatch_ops(q, blk_mq_try_issue_directly(hctx, rq));
 	}
+
+submit_remainder:
+	if (remainder)
+		submit_bio_noacct(remainder);
+
 	return;
+
+submit_remainder_and_exit:
+	if (remainder)
+		submit_bio_noacct(remainder);
 
 queue_exit:
 	/*

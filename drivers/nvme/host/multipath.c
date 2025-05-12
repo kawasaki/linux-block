@@ -457,7 +457,7 @@ static void nvme_ns_head_submit_bio(struct bio *bio)
 	 * different queue via blk_steal_bios(), so we need to use the bio_split
 	 * pool from the original queue to allocate the bvecs from.
 	 */
-	bio = bio_split_to_limits(bio);
+	bio = bio_split_to_limits_and_submit(bio);
 	if (!bio)
 		return;
 

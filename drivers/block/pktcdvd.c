@@ -2431,7 +2431,7 @@ static void pkt_submit_bio(struct bio *bio)
 	struct device *ddev = disk_to_dev(pd->disk);
 	struct bio *split;
 
-	bio = bio_split_to_limits(bio);
+	bio = bio_split_to_limits_and_submit(bio);
 	if (!bio)
 		return;
 

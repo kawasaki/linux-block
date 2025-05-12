@@ -342,13 +342,13 @@ ssize_t part_timeout_show(struct device *, struct device_attribute *, char *);
 ssize_t part_timeout_store(struct device *, struct device_attribute *,
 				const char *, size_t);
 
-struct bio *bio_split_discard(struct bio *bio, const struct queue_limits *lim,
+struct bio *bio_split_discard(struct bio **bio, const struct queue_limits *lim,
 		unsigned *nsegs);
-struct bio *bio_split_write_zeroes(struct bio *bio,
+struct bio *bio_split_write_zeroes(struct bio **bio,
 		const struct queue_limits *lim, unsigned *nsegs);
-struct bio *bio_split_rw(struct bio *bio, const struct queue_limits *lim,
+struct bio *bio_split_rw(struct bio **bio, const struct queue_limits *lim,
 		unsigned *nr_segs);
-struct bio *bio_split_zone_append(struct bio *bio,
+struct bio *bio_split_zone_append(struct bio **bio,
 		const struct queue_limits *lim, unsigned *nr_segs);
 
 /*
@@ -372,27 +372,30 @@ static inline bool bio_may_need_split(struct bio *bio,
 
 /**
  * __bio_split_to_limits - split a bio to fit the queue limits
- * @bio:     bio to be split
+ * @bio:     pointer to the bio to be split
  * @lim:     queue limits to split based on
  * @nr_segs: returns the number of segments in the returned bio
  *
  * Check if @bio needs splitting based on the queue limits, and if so split off
  * a bio fitting the limits from the beginning of @bio and return it.  @bio is
- * shortened to the remainder and re-submitted.
+ * shortened to the remainder and stored in *@bio.
  *
  * The split bio is allocated from @q->bio_split, which is provided by the
  * block layer.
  */
-static inline struct bio *__bio_split_to_limits(struct bio *bio,
+static inline struct bio *__bio_split_to_limits(struct bio **bio,
 		const struct queue_limits *lim, unsigned int *nr_segs)
 {
-	switch (bio_op(bio)) {
+	struct bio *orig_bio = *bio;
+
+	switch (bio_op(*bio)) {
 	case REQ_OP_READ:
 	case REQ_OP_WRITE:
-		if (bio_may_need_split(bio, lim))
+		if (bio_may_need_split(*bio, lim))
 			return bio_split_rw(bio, lim, nr_segs);
 		*nr_segs = 1;
-		return bio;
+		*bio = NULL;
+		return orig_bio;
 	case REQ_OP_ZONE_APPEND:
 		return bio_split_zone_append(bio, lim, nr_segs);
 	case REQ_OP_DISCARD:
@@ -403,7 +406,8 @@ static inline struct bio *__bio_split_to_limits(struct bio *bio,
 	default:
 		/* other operations can't be split */
 		*nr_segs = 0;
-		return bio;
+		*bio = NULL;
+		return orig_bio;
 	}
 }
 
