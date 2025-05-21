@@ -614,12 +614,11 @@ static void disk_zone_wplug_abort(struct blk_zone_wplug *zwplug)
 	pr_warn_ratelimited("%s: zone %u: Aborting plugged BIOs\n",
 			    zwplug->disk->disk_name, zwplug->zone_no);
 	for (;;) {
-		scoped_guard(spinlock_irqsave, &zwplug->lock) {
+		scoped_guard(spinlock_irqsave, &zwplug->lock)
 			bio = bio_list_pop(&zwplug->bio_list);
-			if (!bio)
-				break;
-			blk_zone_wplug_bio_io_error(zwplug, bio);
-		}
+		if (!bio)
+			break;
+		blk_zone_wplug_bio_io_error(zwplug, bio);
 	}
 }
 
@@ -1237,8 +1236,9 @@ void blk_zone_write_plug_bio_endio(struct bio *bio)
 	 * needing a write pointer update.
 	 */
 	if (bio->bi_status != BLK_STS_OK) {
-		spin_lock_irqsave(&zwplug->lock, flags);
 		disk_zone_wplug_abort(zwplug);
+
+		spin_lock_irqsave(&zwplug->lock, flags);
 		zwplug->flags |= BLK_ZONE_WPLUG_NEED_WP_UPDATE;
 		spin_unlock_irqrestore(&zwplug->lock, flags);
 	}
@@ -1289,13 +1289,12 @@ static void blk_zone_wplug_bio_work(struct work_struct *work)
 	unsigned long flags;
 	struct bio *bio;
 
+again:
 	/*
 	 * Submit the next plugged BIO. If we do not have any, clear
 	 * the plugged flag.
 	 */
 	spin_lock_irqsave(&zwplug->lock, flags);
-
-again:
 	bio = bio_list_pop(&zwplug->bio_list);
 	if (!bio) {
 		zwplug->flags &= ~BLK_ZONE_WPLUG_PLUGGED;
@@ -1304,6 +1303,7 @@ again:
 	}
 
 	if (!blk_zone_wplug_prepare_bio(zwplug, bio)) {
+		spin_unlock_irqrestore(&zwplug->lock, flags);
 		blk_zone_wplug_bio_io_error(zwplug, bio);
 		goto again;
 	}
