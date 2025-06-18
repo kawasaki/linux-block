@@ -4018,6 +4018,70 @@ static inline bool vma_is_special_huge(const struct vm_area_struct *vma)
 
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE || CONFIG_HUGETLBFS */
 
+extern struct folio *huge_zero_folio;
+extern unsigned long huge_zero_pfn;
+
+/*
+ * mm_get_static_huge_zero_folio - Get a PMD sized zero folio
+ *
+ * This function will return a PMD sized zero folio if CONFIG_STATIC_PMD_ZERO_PAGE
+ * is enabled. Otherwise, a ZERO_PAGE folio is returned.
+ *
+ * Deduce the size of the folio with folio_size instead of assuming the
+ * folio size.
+ */
+static inline struct folio *mm_get_static_huge_zero_folio(void)
+{
+	if(IS_ENABLED(CONFIG_STATIC_PMD_ZERO_PAGE))
+		return READ_ONCE(huge_zero_folio);
+	return page_folio(ZERO_PAGE(0));
+}
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+static inline bool is_huge_zero_folio(const struct folio *folio)
+{
+	return READ_ONCE(huge_zero_folio) == folio;
+}
+
+static inline bool is_huge_zero_pmd(pmd_t pmd)
+{
+	return pmd_present(pmd) && READ_ONCE(huge_zero_pfn) == pmd_pfn(pmd);
+}
+
+#ifdef CONFIG_STATIC_PMD_ZERO_PAGE
+static inline struct folio *mm_get_huge_zero_folio(struct mm_struct *mm)
+{
+	return READ_ONCE(huge_zero_folio);
+}
+
+static inline void mm_put_huge_zero_folio(struct mm_struct *mm)
+{
+	return;
+}
+
+#else
+struct folio *mm_get_huge_zero_folio(struct mm_struct *mm);
+void mm_put_huge_zero_folio(struct mm_struct *mm);
+
+#endif /* CONFIG_STATIC_PMD_ZERO_PAGE */
+
+#else
+static inline bool is_huge_zero_folio(const struct folio *folio)
+{
+	return false;
+}
+
+static inline bool is_huge_zero_pmd(pmd_t pmd)
+{
+	return false;
+}
+
+static inline void mm_put_huge_zero_folio(struct mm_struct *mm)
+{
+	return;
+}
+#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+
 #if MAX_NUMNODES > 1
 void __init setup_nr_node_ids(void);
 #else

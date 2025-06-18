@@ -75,9 +75,6 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
 					 struct shrink_control *sc);
 static bool split_underused_thp = true;
 
-static atomic_t huge_zero_refcount;
-struct folio *huge_zero_folio __read_mostly;
-unsigned long huge_zero_pfn __read_mostly = ~0UL;
 unsigned long huge_anon_orders_always __read_mostly;
 unsigned long huge_anon_orders_madvise __read_mostly;
 unsigned long huge_anon_orders_inherit __read_mostly;
@@ -208,6 +205,23 @@ unsigned long __thp_vma_allowable_orders(struct vm_area_struct *vma,
 	return orders;
 }
 
+#ifdef CONFIG_STATIC_PMD_ZERO_PAGE
+static int huge_zero_page_shrinker_init(void)
+{
+	return 0;
+}
+
+static void huge_zero_page_shrinker_exit(void)
+{
+	return;
+}
+#else
+
+static struct shrinker *huge_zero_page_shrinker;
+static atomic_t huge_zero_refcount;
+struct folio *huge_zero_folio __read_mostly;
+unsigned long huge_zero_pfn __read_mostly = ~0UL;
+
 static bool get_huge_zero_page(void)
 {
 	struct folio *zero_folio;
@@ -288,7 +302,25 @@ static unsigned long shrink_huge_zero_page_scan(struct shrinker *shrink,
 	return 0;
 }
 
-static struct shrinker *huge_zero_page_shrinker;
+static int huge_zero_page_shrinker_init(void)
+{
+	huge_zero_page_shrinker = shrinker_alloc(0, "thp-zero");
+	if (!huge_zero_page_shrinker)
+		return -ENOMEM;
+
+	huge_zero_page_shrinker->count_objects = shrink_huge_zero_page_count;
+	huge_zero_page_shrinker->scan_objects = shrink_huge_zero_page_scan;
+	shrinker_register(huge_zero_page_shrinker);
+	return 0;
+}
+
+static void huge_zero_page_shrinker_exit(void)
+{
+	shrinker_free(huge_zero_page_shrinker);
+	return;
+}
+
+#endif
 
 #ifdef CONFIG_SYSFS
 static ssize_t enabled_show(struct kobject *kobj,
@@ -850,33 +882,31 @@ static inline void hugepage_exit_sysfs(struct kobject *hugepage_kobj)
 
 static int __init thp_shrinker_init(void)
 {
-	huge_zero_page_shrinker = shrinker_alloc(0, "thp-zero");
-	if (!huge_zero_page_shrinker)
-		return -ENOMEM;
+	int ret = 0;
 
 	deferred_split_shrinker = shrinker_alloc(SHRINKER_NUMA_AWARE |
 						 SHRINKER_MEMCG_AWARE |
 						 SHRINKER_NONSLAB,
 						 "thp-deferred_split");
-	if (!deferred_split_shrinker) {
-		shrinker_free(huge_zero_page_shrinker);
+	if (!deferred_split_shrinker)
 		return -ENOMEM;
-	}
-
-	huge_zero_page_shrinker->count_objects = shrink_huge_zero_page_count;
-	huge_zero_page_shrinker->scan_objects = shrink_huge_zero_page_scan;
-	shrinker_register(huge_zero_page_shrinker);
 
 	deferred_split_shrinker->count_objects = deferred_split_count;
 	deferred_split_shrinker->scan_objects = deferred_split_scan;
 	shrinker_register(deferred_split_shrinker);
+
+	ret = huge_zero_page_shrinker_init();
+	if (ret) {
+		shrinker_free(deferred_split_shrinker);
+		return ret;
+	}
 
 	return 0;
 }
 
 static void __init thp_shrinker_exit(void)
 {
-	shrinker_free(huge_zero_page_shrinker);
+	huge_zero_page_shrinker_exit();
 	shrinker_free(deferred_split_shrinker);
 }
 
@@ -2827,6 +2857,8 @@ static void __split_huge_zero_page_pmd(struct vm_area_struct *vma,
 	pte_t *pte;
 	int i;
 
+	// FIXME: can this be called with static zero page?
+	VM_BUG_ON(IS_ENABLED(CONFIG_STATIC_PMD_ZERO_PAGE));
 	/*
 	 * Leave pmd empty until pte is filled note that it is fine to delay
 	 * notification until mmu_notifier_invalidate_range_end() as we are
