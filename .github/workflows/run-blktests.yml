@@ -1,0 +1,112 @@
+name: Run blktests
+
+on:
+  pull_request:
+
+env:
+  KERNEL_REF: "${{ github.event.pull_request.head.sha }}"
+  KERNEL_TREE: "https://github.com/${{ github.repository }}"
+
+#This workflow requires two k8s actions-runner-controllers (ARC) to be active.
+#One for building the kernel and fedora image and the other one for spawning the VM resource.
+jobs:
+  build-kernel:
+    #This step runs in a container in the k8s cluster 
+    runs-on: arc-kernel-builder
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          repository: linux-blktests/blktests-ci
+          path: blktests-ci
+
+      - name: Build kernel and package it into a containerimage
+        run: |
+          cd blktests-ci/playbooks/roles/kernel-builder-k8s-job/templates
+          docker build \
+            --build-arg KERNEL_TREE=${KERNEL_TREE} \
+            --build-arg KERNEL_REF=${KERNEL_REF} \
+            -t linux-kernel-containerdisk \
+            -f Dockerfile.linux-kernel-containerdisk . 2>&1 | tee build.log
+          #Setting KERNEL_VERSION var which is latern needed for notifying the VM what kernel to pick up
+          cat build.log | grep KERNEL_VERSION | awk '{print $3}' | grep KERNEL_VERSION >> $GITHUB_ENV
+
+      - name: Push the new Fedora containerimage with the freshly build kernel
+        run: |
+          docker tag linux-kernel-containerdisk registry-service.docker-registry.svc.cluster.local/linux-kernel-containerdisk:${KERNEL_VERSION}
+          docker push registry-service.docker-registry.svc.cluster.local/linux-kernel-containerdisk:${KERNEL_VERSION}
+
+      - name: Notifying the next job to pick up the Fedora image with the correct tag that we just build
+        run: |
+          echo "${KERNEL_VERSION}"
+
+  run-tests-on-kernel:
+    #ATTENTION! This section formats all available NVMe devices. Be careful when changing the `runs-on` tag!
+    #This step runs in a VM with the previously compiled kernel in the k8s cluster 
+    runs-on: arc-vm-runner-set
+    needs: build-kernel
+    steps:
+      - name: Print VM debug info
+        run: |
+          uname -a
+          cat /etc/os-release
+          lsblk
+
+      #We create .info files that contain the KERNEL_VERSION tag in the
+      #modules tree when building the kernel
+      - name: Verify that we are running the correct kernel
+        run: |
+          cat /usr/lib/modules/*.info | grep "${KERNEL_VERSION}" 
+
+      - name: Install build dependencies for blktests
+        run: |
+          sudo dnf install -y gcc \
+          clang \
+          make \
+          util-linux \
+          llvm \
+          gawk \
+          fio \
+          udev \
+          kmod \
+          coreutils \
+          gcc \
+          gzip \
+          e2fsprogs \
+          xfsprogs \
+          f2fs-tools \
+          btrfs-progs \
+          device-mapper-multipath \
+          nbd \
+          device-mapper \
+          unzip \
+          jq \
+          nvme-cli \
+          git \
+          wget
+
+      - name: Checkout blktests
+        uses: actions/checkout@v4
+        with:
+          repository: osandov/blktests
+          path: blktests
+
+      - name: Build blktests
+        run: |
+          cd blktests
+          make
+
+      - name: Configure blktests
+        run: |
+          cd blktests
+          cat > config << EOF
+          TEST_DEVS=(${ZBD0})
+          DEVICE_ONLY=1
+          EOF
+
+      - name: Run ZBD Tests
+        run: |
+          cd blktests
+          sudo ./check zbd
+        env: 
+          RUN_ZONED_TESTS: 1
