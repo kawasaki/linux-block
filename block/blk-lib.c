@@ -368,3 +368,118 @@ int blkdev_issue_secure_erase(struct block_device *bdev, sector_t sector,
 	return ret;
 }
 EXPORT_SYMBOL(blkdev_issue_secure_erase);
+
+static int __blkdev_copy(struct block_device *bdev, sector_t dst_sector,
+		sector_t src_sector, sector_t nr_sects, gfp_t gfp)
+{
+	unsigned int nr_vecs = __blkdev_sectors_to_bio_pages(nr_sects);
+	unsigned int len = (unsigned int)nr_sects << SECTOR_SHIFT;
+	unsigned int size = min(len, nr_vecs * PAGE_SIZE);
+	struct bio *bio;
+	int ret = 0;
+	void *buf;
+
+	if (nr_sects > UINT_MAX >> SECTOR_SHIFT)
+		return -EINVAL;
+
+	buf = kvmalloc(size, gfp);
+	if (!buf)
+		return -ENOMEM;
+
+	nr_vecs = bio_add_max_vecs(buf, size);
+	bio = bio_alloc(bdev, nr_vecs, 0, gfp);
+
+	if (is_vmalloc_addr(buf))
+		bio_add_vmalloc(bio, buf, size);
+	else
+		bio_add_virt_nofail(bio, buf, size);
+
+	while (len) {
+		size = min(len, size);
+
+		bio_reset(bio, bdev, REQ_OP_READ);
+		bio->bi_iter.bi_sector = src_sector;
+		bio->bi_iter.bi_size = size;
+
+		ret = submit_bio_wait(bio);
+		if (ret)
+			break;
+
+		bio_reset(bio, bdev, REQ_OP_WRITE);
+		bio->bi_iter.bi_sector = dst_sector;
+		bio->bi_iter.bi_size = size;
+
+		ret = submit_bio_wait(bio);
+		if (ret)
+			break;
+
+		src_sector += size >> SECTOR_SHIFT;
+		dst_sector += size >> SECTOR_SHIFT;
+		len -= size;
+	}
+
+	bio_put(bio);
+	kvfree(buf);
+	return ret;
+}
+
+static int blkdev_copy_offload(struct block_device *bdev, sector_t dst_sector,
+		struct bio_vec *bv, int nr_vecs, gfp_t gfp)
+{
+	unsigned size = 0;
+	struct bio *bio;
+	int ret, i;
+
+	bio = bio_alloc(bdev, nr_vecs, REQ_OP_COPY, gfp);
+	for (i = 0; i < nr_vecs; i++) {
+		size += bv[i].bv_sectors << SECTOR_SHIFT;
+		bio_add_copy_src(bio, &bv[i]);
+	}
+	bio->bi_iter.bi_sector = dst_sector;
+	bio->bi_iter.bi_size = size;
+
+	ret = submit_bio_wait(bio);
+	bio_put(bio);
+	return ret;
+}
+
+/**
+ * blkdev_copy_range - copy range of sectors to a destination
+ * @dst_sector:	start sector of the destination to copy to
+ * @bv:		vector of source sectors
+ * @nr_vecs:	number of source sector vectors
+ * @gfp:	allocation flags to use
+ */
+int blkdev_copy_range(struct block_device *bdev, sector_t dst_sector,
+		struct bio_vec *bv, int nr_vecs, gfp_t gfp)
+{
+	int ret, i;
+
+	if (bdev_copy_sectors(bdev))
+		return blkdev_copy_offload(bdev, dst_sector, bv, nr_vecs, gfp);
+
+	for (i = 0, ret = 0; i < nr_vecs && !ret; i++)
+		ret = __blkdev_copy(bdev, dst_sector, bv[i].bv_sector,
+				bv[i].bv_sectors, gfp);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(blkdev_copy_range);
+
+/**
+ * blkdev_copy - copy source sectors to a destination on the same block device
+ * @dst_sector:	start sector of the destination to copy to
+ * @src_sector:	start sector of the source to copy from
+ * @nr_sects:	number of sectors to copy
+ * @gfp:	allocation flags to use
+ */
+int blkdev_copy(struct block_device *bdev, sector_t dst_sector,
+		sector_t src_sector, sector_t nr_sects, gfp_t gfp)
+{
+	struct bio_vec bv = {
+		.bv_sector = src_sector,
+		.bv_sectors = nr_sects,
+	};
+
+	return blkdev_copy_range(bdev, dst_sector, &bv, 1, gfp);
+}
+EXPORT_SYMBOL_GPL(blkdev_copy);
