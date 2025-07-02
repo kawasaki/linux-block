@@ -347,6 +347,8 @@ static ssize_t __blkdev_direct_IO_async(struct kiocb *iocb,
 		 * bio_iov_iter_get_pages() and set the bvec directly.
 		 */
 		bio_iov_bvec_set(bio, iter);
+	} else if (iov_iter_is_dma(iter)) {
+		bio_iov_dmavec_set(bio, iter);
 	} else {
 		ret = bio_iov_iter_get_pages(bio, iter);
 		if (unlikely(ret))
@@ -939,6 +941,7 @@ const struct file_operations def_blk_fops = {
 	.fallocate	= blkdev_fallocate,
 	.uring_cmd	= blkdev_uring_cmd,
 	.fop_flags	= FOP_BUFFER_RASYNC,
+	.get_dma_device = block_get_dma_device,
 };
 
 static __init int blkdev_init(void)
