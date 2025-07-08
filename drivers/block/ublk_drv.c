@@ -2004,11 +2004,16 @@ static inline int ublk_check_cmd_op(u32 cmd_op)
 }
 
 static inline void ublk_fill_io_cmd(struct ublk_io *io,
-		struct io_uring_cmd *cmd, unsigned long buf_addr)
+		struct io_uring_cmd *cmd, unsigned long buf_addr,
+		int result)
 {
 	io->cmd = cmd;
 	io->flags |= UBLK_IO_FLAG_ACTIVE;
 	io->addr = buf_addr;
+	io->res = result;
+
+	/* now this cmd slot is owned by ublk driver */
+	io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
 }
 
 static inline void ublk_prep_cancel(struct io_uring_cmd *cmd,
@@ -2166,7 +2171,7 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
 			goto out;
 	}
 
-	ublk_fill_io_cmd(io, cmd, buf_addr);
+	ublk_fill_io_cmd(io, cmd, buf_addr, 0);
 	WRITE_ONCE(io->task, get_task_struct(current));
 	ublk_mark_io_ready(ub, ubq);
 out:
@@ -2222,11 +2227,7 @@ static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
 			return ret;
 	}
 
-	ublk_fill_io_cmd(io, cmd, ub_cmd->addr);
-
-	/* now this cmd slot is owned by ublk driver */
-	io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
-	io->res = ub_cmd->result;
+	ublk_fill_io_cmd(io, cmd, ub_cmd->addr, ub_cmd->result);
 
 	if (req_op(req) == REQ_OP_ZONE_APPEND)
 		req->__sector = ub_cmd->zone_append_lba;
@@ -2346,8 +2347,7 @@ static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 		 * request
 		 */
 		req = io->req;
-		ublk_fill_io_cmd(io, cmd, ub_cmd->addr);
-		io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
+		ublk_fill_io_cmd(io, cmd, ub_cmd->addr, 0);
 		if (likely(ublk_get_data(ubq, io, req))) {
 			__ublk_prep_compl_io_cmd(io, req);
 			return UBLK_IO_RES_OK;
